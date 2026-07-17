@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import '@rainbow-me/rainbowkit/styles.css';
@@ -12,7 +12,11 @@ export const metadata: Metadata = {
   description: 'Autonomous multi-agent AI swarm that manages crypto treasuries with collaborative debate, risk veto, and human-in-the-loop approval on Somnia.',
   keywords: 'blockchain, multi-agent, AI, treasury, DAO, DeFi, somnia, swarm',
   authors: [{ name: 'SyndiChain Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#a855f7',
 };
 
