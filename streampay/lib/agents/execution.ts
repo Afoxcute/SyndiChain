@@ -1,5 +1,5 @@
 import { AgentMessage, YieldOpportunity, RiskAssessment, FormattedTransaction, MulticallEntry } from './types';
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 
 export async function runExecutionAgent(
   proposals: YieldOpportunity[],

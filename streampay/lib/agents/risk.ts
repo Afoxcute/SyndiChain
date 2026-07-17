@@ -1,5 +1,5 @@
 import { AgentMessage, YieldOpportunity, RiskAssessment } from './types';
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 
 const RISK_SYSTEM_PROMPT = `You are the Risk Agent of SyndiChain. You are a skeptical, data-driven security
 analyst. Your job is to protect the treasury from bad outcomes. You evaluate smart contract security,

@@ -1,5 +1,5 @@
 import { AgentMessage, YieldOpportunity } from './types';
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 
 const ANALYST_SYSTEM_PROMPT = `You are the Analyst Agent of SyndiChain. Your only job is to find the best
 yield-bearing opportunities on Somnia blockchain DEXes (Somnia Exchange, Potion Swap).

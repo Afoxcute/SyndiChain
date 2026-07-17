@@ -20,7 +20,8 @@ export interface AgentMessage {
   agent: AgentRole;
   type: MessageType;
   content: string;
-  data?: Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: any;
   timestamp: number;
   roundNumber?: number;
 }

@@ -1,5 +1,5 @@
 import { AgentMessage, FormattedTransaction, ComplianceResult } from './types';
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 
 // Mock TreasuryPolicy limits (mirrors TreasuryPolicy.sol)
 const POLICY = {

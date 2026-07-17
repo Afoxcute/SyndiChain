@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 import { SwarmSession, AgentMessage, YieldOpportunity, RiskAssessment } from './types';
 import { runManagerDecomposition, runDebateRound } from './manager';
 import { runAnalystAgent } from './analyst';

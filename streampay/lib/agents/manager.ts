@@ -1,5 +1,5 @@
 import { AgentMessage, SubTask, SwarmSession } from './types';
-import { nanoid } from 'nanoid';
+import { uid as nanoid } from './uid';
 
 const MANAGER_SYSTEM_PROMPT = `You are the Manager Agent of SyndiChain, an autonomous DAO Treasury Swarm.
 Your role is to:
