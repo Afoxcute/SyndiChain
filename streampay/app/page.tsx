@@ -25,7 +25,7 @@ const AGENTS = [
     icon: Brain,
     color: 'text-purple-400',
     bg: 'bg-purple-500/10 border-purple-500/30',
-    model: 'Claude Sonnet 5',
+    model: 'Qwen-Max',
     desc: 'Parses treasury goals, decomposes tasks, mediates debate rounds, routes to human when stuck.',
   },
   {
@@ -33,7 +33,7 @@ const AGENTS = [
     icon: TrendingUp,
     color: 'text-blue-400',
     bg: 'bg-blue-500/10 border-blue-500/30',
-    model: 'Claude Haiku 4.5',
+    model: 'Qwen-Turbo',
     desc: 'Queries Somnia Exchange & Potion Swap DEX APIs to find highest-APY yield pools matching the goal.',
   },
   {
@@ -41,7 +41,7 @@ const AGENTS = [
     icon: ShieldAlert,
     color: 'text-red-400',
     bg: 'bg-red-500/10 border-red-500/30',
-    model: 'Claude Haiku 4.5',
+    model: 'Qwen-Turbo',
     desc: 'Consults SomniaAgentRiskOracle.sol for audit scores, TVL history & exploit probability. Issues vetoes.',
   },
   {
@@ -49,7 +49,7 @@ const AGENTS = [
     icon: Cpu,
     color: 'text-green-400',
     bg: 'bg-green-500/10 border-green-500/30',
-    model: 'Claude Haiku 4.5',
+    model: 'Qwen-Turbo',
     desc: 'Formats approved strategy as a gas-optimized Multicall3 transaction ready for on-chain submission.',
   },
   {

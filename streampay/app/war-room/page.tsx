@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Brain, ShieldAlert, TrendingUp, Cpu, Scale, Users,
   Send, CheckCircle, XCircle, AlertTriangle, Loader2,
-  Zap, MessageSquare,
+  Zap, MessageSquare, Code2, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 const AGENT_CONFIG = {
@@ -353,9 +353,11 @@ export default function WarRoomPage() {
 function MessageBubble({ message }: { message: AgentMessage }) {
   const config = AGENT_CONFIG[message.agent];
   const Icon = config.icon;
+  const [showJson, setShowJson] = useState(false);
 
   const isVeto = message.type === 'veto';
   const isEscalation = message.type === 'escalation';
+  const hasData = message.data != null;
 
   return (
     <motion.div
@@ -377,8 +379,31 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {message.roundNumber && (
           <Badge variant="outline" className="text-[10px] h-4">Round {message.roundNumber}</Badge>
         )}
+        {hasData && (
+          <button
+            onClick={() => setShowJson(v => !v)}
+            className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
+            title="Toggle raw JSON payload"
+          >
+            <Code2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
       <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{message.content}</p>
+      <AnimatePresence>
+        {showJson && hasData && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <pre className="mt-2 text-[10px] bg-black/40 rounded p-2 overflow-auto max-h-48 text-green-300 font-mono">
+              {JSON.stringify(message.data, null, 2)}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

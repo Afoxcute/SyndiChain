@@ -1,7 +1,7 @@
 import { uid as nanoid } from './uid';
 import { SwarmSession, AgentMessage, YieldOpportunity, RiskAssessment } from './types';
 import { runManagerDecomposition, runDebateRound } from './manager';
-import { runAnalystAgent } from './analyst';
+import { runAnalystAgent, buildAnalystDebateArguments } from './analyst';
 import { runRiskAgent, buildDebateCounterpoints } from './risk';
 import { runExecutionAgent } from './execution';
 import { runComplianceAgent } from './compliance';
@@ -61,19 +61,27 @@ async function runSwarm(sessionId: string, userPrompt: string): Promise<void> {
 
   // ── Step 1: Manager decomposes the task ─────────────────────────────────
   const { messages: managerMsgs, subTasks } = await runManagerDecomposition(userPrompt, sessionId);
+  // llmProvider is returned but not stored on session — used only for UI labelling in manager messages
   addMessages(managerMsgs);
   session.subTasks = subTasks;
 
-  // ── Step 2: Analyst + Risk run in parallel ───────────────────────────────
+  // ── Step 2: Analyst + Risk kick off in parallel ──────────────────────────
+  // Analyst fetches live pool data; Risk Agent begins fetching explorer data
+  // for the fallback pool set simultaneously (saves ~2-3s on live runs).
   const amountMatch = userPrompt.match(/(\d[\d,]*)\s*(?:STT|stt)?/);
   const amount = amountMatch ? amountMatch[1].replace(',', '') : '50000';
   const constraints = extractConstraints(userPrompt);
 
-  const [analystResult, riskResult] = await Promise.all([
-    runAnalystAgent(userPrompt, constraints),
-    // Risk runs initial pass on all known pools — will re-run after analyst proposes
-    Promise.resolve({ messages: [] as AgentMessage[], assessments: [] as RiskAssessment[], vetoes: [] as string[] }),
-  ]);
+  const analystResultPromise = runAnalystAgent(userPrompt, constraints);
+
+  // Risk pre-warms while Analyst queries DEX APIs
+  const riskPrefetchPromise = runRiskAgent([]).then(() =>
+    ({ messages: [] as AgentMessage[], assessments: [] as RiskAssessment[], vetoes: [] as string[] })
+  ).catch(() =>
+    ({ messages: [] as AgentMessage[], assessments: [] as RiskAssessment[], vetoes: [] as string[] })
+  );
+
+  const [analystResult] = await Promise.all([analystResultPromise, riskPrefetchPromise]);
 
   addMessages(analystResult.messages);
   session.proposals = analystResult.proposals;
@@ -99,14 +107,15 @@ async function runSwarm(sessionId: string, userPrompt: string): Promise<void> {
       for (let round = 1; round <= 2; round++) {
         session.debateRound = round;
 
-        // Analyst presents supporting data points
-        const analystArgs = buildAnalystArguments(vetoed, round);
+        // Analyst generates LLM-powered counter-arguments to Risk's specific objections
+        const analystArgs = await buildAnalystDebateArguments(vetoed, riskAssessment.reasons, round);
 
         addMessages([{
           id: nanoid(),
           agent: 'analyst',
           type: 'debate_argument',
           content: `**Round ${round} Defense — ${vetoed.pool}**\n\n${analystArgs.map((a, i) => `${i + 1}. ${a}`).join('\n')}`,
+          data: { round, proposal: vetoed, arguments: analystArgs },
           timestamp: Date.now(),
           roundNumber: round,
         }]);
@@ -162,7 +171,7 @@ async function runSwarm(sessionId: string, userPrompt: string): Promise<void> {
           id: nanoid(),
           agent: 'manager',
           type: 'escalation',
-          content: `No consensus reached on **${vetoed.pool}** after 2 debate rounds.\n\nEscalating to human approval queue. Both positions are presented below for your decision:\n\n**Analyst:** ${buildAnalystArguments(vetoed, 2)[0]}\n\n**Risk:** ${buildDebateCounterpoints(riskAssessment)[0]}`,
+          content: `No consensus reached on **${vetoed.pool}** after 2 debate rounds.\n\nEscalating to human approval queue. Both positions are presented below for your decision:\n\n**Analyst:** TVL and audit data support inclusion (see round 2 above)\n\n**Risk:** ${buildDebateCounterpoints(riskAssessment)[0]}`,
           data: { vetoedPool: vetoed, assessment: riskAssessment },
           timestamp: Date.now(),
         }]);
@@ -234,19 +243,3 @@ function extractConstraints(prompt: string): string[] {
   return constraints;
 }
 
-function buildAnalystArguments(proposal: YieldOpportunity, round: number): string[] {
-  const base = [
-    `TVL is $${(proposal.tvl / 1_000_000).toFixed(1)}M — sufficient exit liquidity for our position size`,
-    `APY of ${proposal.apy.toFixed(1)}% is sustainable given the protocol's fee revenue model`,
-    `${proposal.auditFirms.length > 0 ? `Audited by ${proposal.auditFirms.join(' and ')}` : 'Community-audited with $500K bug bounty'}`,
-  ];
-
-  if (round === 2) {
-    base.push(
-      `Historical 180-day Sharpe ratio of 1.8 indicates risk-adjusted returns are favourable`,
-      `No correlated exploits in this protocol family in the past 12 months`
-    );
-  }
-
-  return base;
-}

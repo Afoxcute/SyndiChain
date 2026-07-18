@@ -1,8 +1,9 @@
 import { AgentMessage, FormattedTransaction, ComplianceResult } from './types';
 import { uid as nanoid } from './uid';
+import { readTreasuryPolicy } from './onchain';
 
-// Mock TreasuryPolicy limits (mirrors TreasuryPolicy.sol)
-const POLICY = {
+// Fallback policy constants (mirror TreasuryPolicy.sol constructor defaults)
+const DEFAULT_POLICY = {
   dailyTransferLimit: 10_000, // STT
   singleTxLimit: 5_000,       // STT
   minLiquidityReserve: 1_000, // STT
@@ -25,11 +26,18 @@ export async function runComplianceAgent(
 
   await sleep(400);
 
+  // Attempt to read live policy from deployed TreasuryPolicy.sol on Somnia Testnet
+  const onChainPolicy = await readTreasuryPolicy();
+  const POLICY = onChainPolicy ?? DEFAULT_POLICY;
+  const policySource = onChainPolicy
+    ? `TreasuryPolicy.sol @ ${process.env.NEXT_PUBLIC_TREASURY_POLICY_ADDRESS}`
+    : 'TreasuryPolicy.sol (default limits — deploy contract and set NEXT_PUBLIC_TREASURY_POLICY_ADDRESS to read live)';
+
   messages.push({
     id: nanoid(),
     agent: 'compliance',
     type: 'compliance_check',
-    content: `Verifying transaction against TreasuryPolicy.sol on Somnia Testnet...`,
+    content: `Verifying transaction against ${policySource}...`,
     timestamp: Date.now(),
   });
 
