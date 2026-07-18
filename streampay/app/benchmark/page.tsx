@@ -118,12 +118,14 @@ export default function BenchmarkPage() {
         </h1>
         <p className="text-muted-foreground mt-2">
           Aggregate results ({aggregate.aggregateTrials} trials) + live head-to-head run
-          {aggregate.provider !== 'none' && (
-            <Badge variant="outline" className="ml-2 text-[10px]">
+        </p>
+        {aggregate.provider !== 'none' && (
+          <div className="flex justify-center mt-1">
+            <Badge variant="outline" className="text-[10px]">
               Provider: {aggregate.provider === 'qwen' ? 'Qwen (Max/Turbo)' : 'Claude (Sonnet/Haiku)'}
             </Badge>
-          )}
-        </p>
+          </div>
+        )}
       </div>
 
       {/* KPI cards */}
