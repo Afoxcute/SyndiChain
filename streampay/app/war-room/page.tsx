@@ -42,7 +42,7 @@ export default function WarRoomPage() {
       if (res.ok) {
         const data: SwarmSession = await res.json();
         setSession(data);
-        if (data.status !== 'running' && data.status !== 'debating') {
+        if (data.status === 'complete' || data.status === 'failed') {
           setPolling(false);
         }
       }
@@ -80,9 +80,9 @@ export default function WarRoomPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'human_decision', sessionId, decision }),
     });
-    // Fetch once more to get final state
-    const res = await fetch(`/api/swarm?sessionId=${sessionId}`);
-    if (res.ok) setSession(await res.json());
+    // Resume polling so the UI picks up the complete state and any
+    // remaining agent messages (Execution + Compliance run after approval)
+    setPolling(true);
   }
 
   return (

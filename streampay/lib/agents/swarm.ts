@@ -217,8 +217,6 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
   if (!session || session.status !== 'awaiting_human') return false;
 
   session.humanDecision = decision;
-  session.status = 'complete';
-  session.completedAt = Date.now();
 
   session.messages.push({
     id: nanoid(),
@@ -226,12 +224,60 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
     type: 'human_decision',
     content:
       decision === 'approved'
-        ? `Human approved the transaction. Submitting to Somnia blockchain...`
-        : `Human rejected the proposal. Returning to analysis phase.`,
+        ? `Human approved. Resuming swarm pipeline — running Execution and Compliance agents...`
+        : `Human rejected the proposal. Swarm halted.`,
     timestamp: Date.now(),
   });
 
+  if (decision === 'rejected') {
+    session.status = 'complete';
+    session.completedAt = Date.now();
+    return true;
+  }
+
+  // Resume the pipeline — run Execution + Compliance now that human approved
+  session.status = 'running';
+  resumeAfterHumanApproval(sessionId).catch((err) => {
+    session.status = 'failed';
+    session.messages.push({
+      id: nanoid(), agent: 'manager', type: 'rejected',
+      content: `Pipeline failed after human approval: ${err.message}`,
+      timestamp: Date.now(),
+    });
+  });
+
   return true;
+}
+
+async function resumeAfterHumanApproval(sessionId: string): Promise<void> {
+  const session = sessions.get(sessionId)!;
+  const addMessages = (msgs: AgentMessage[]) => { session.messages.push(...msgs); };
+
+  const amountMatch = session.userPrompt.match(/(\d[\d,]*)\s*(?:STT|stt)?/);
+  const amount = amountMatch ? amountMatch[1].replace(',', '') : '50000';
+
+  const { messages: execMsgs, tx } = await runExecutionAgent(
+    session.proposals,
+    session.riskAssessments,
+    amount
+  );
+  addMessages(execMsgs);
+  session.formattedTx = tx;
+
+  const { messages: compMsgs, result } = await runComplianceAgent(tx, 50000, 0);
+  addMessages(compMsgs);
+  session.complianceResult = result;
+
+  session.status = 'complete';
+  session.completedAt = Date.now();
+
+  addMessages([{
+    id: nanoid(), agent: 'manager', type: 'approved',
+    content: result.compliant
+      ? `Transaction approved and compliance verified. Ready for on-chain submission to Somnia.`
+      : `Compliance check failed after approval: ${result.reason}`,
+    timestamp: Date.now(),
+  }]);
 }
 
 function extractConstraints(prompt: string): string[] {
