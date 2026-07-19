@@ -51,8 +51,8 @@ export async function readTreasuryPolicy(): Promise<OnChainPolicy | null> {
   const addr = process.env.NEXT_PUBLIC_TREASURY_POLICY_ADDRESS;
   if (!addr || addr === '') return null;
 
-  // getPolicy() → selector = keccak256("getPolicy()")[:4] = 0xab3d0e18
-  const result = await ethCall(addr, '0xab3d0e18');
+  // getPolicy() → selector = keccak256("getPolicy()")[:4] = 0x24b7b933
+  const result = await ethCall(addr, '0x24b7b933');
   if (!result || result === '0x') return null;
 
   try {

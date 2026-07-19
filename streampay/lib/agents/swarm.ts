@@ -165,8 +165,9 @@ async function runSwarm(sessionId: string, userPrompt: string): Promise<void> {
           timestamp: Date.now(),
         }]);
       } else {
-        // Escalate to human
+        // Escalate to human — pipeline not yet complete, flag for resumption
         session.status = 'awaiting_human';
+        session.needsPostApprovalPipeline = true;
         addMessages([{
           id: nanoid(),
           agent: 'manager',
@@ -235,7 +236,14 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
     return true;
   }
 
-  // Resume the pipeline — run Execution + Compliance now that human approved
+  // Only resume pipeline if human was asked mid-debate (before Execution ran)
+  if (!session.needsPostApprovalPipeline) {
+    session.status = 'complete';
+    session.completedAt = Date.now();
+    return true;
+  }
+
+  session.needsPostApprovalPipeline = false;
   session.status = 'running';
   resumeAfterHumanApproval(sessionId).catch((err) => {
     session.status = 'failed';

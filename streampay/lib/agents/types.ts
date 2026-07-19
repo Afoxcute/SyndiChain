@@ -93,4 +93,5 @@ export interface SwarmSession {
   startedAt: number;
   completedAt?: number;
   debateRound: number;
+  needsPostApprovalPipeline?: boolean; // true when escalated before Execution ran
 }
