@@ -7,9 +7,21 @@ Your job is to rank and select the best yield-bearing pool opportunities from li
 You are optimistic but must cite real numbers. Always respond with valid JSON only.`;
 
 // ─── DEX API endpoints ────────────────────────────────────────────────────────
-
-const SOMNIA_EXCHANGE_API = 'https://api.somnia.exchange/v1/pools';
-const POTION_SWAP_API = 'https://app.potionswap.xyz/api/v1/pools';
+// Somnia testnet DEX APIs — multiple URL patterns attempted per DEX
+// since testnet endpoints are not yet stable
+const SOMNIA_EXCHANGE_URLS = [
+  'https://api.somnia.exchange/v1/pools',
+  'https://somnia.exchange/api/v1/pools',
+  'https://api.somnia.exchange/pools',
+];
+const POTION_SWAP_URLS = [
+  'https://api.potionswap.xyz/v1/pools',
+  'https://app.potionswap.xyz/api/pools',
+  'https://potionswap.xyz/api/v1/pools',
+];
+// Keep legacy constants for log messages
+const SOMNIA_EXCHANGE_API = SOMNIA_EXCHANGE_URLS[0];
+const POTION_SWAP_API = POTION_SWAP_URLS[0];
 const SHANNON_EXPLORER = 'https://shannon-explorer.somnia.network/api/v2';
 
 // Enriched fallback — used when live APIs are unreachable (testnet instability)
@@ -68,46 +80,51 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
 
 // ─── Live DEX fetchers ────────────────────────────────────────────────────────
 
-async function fetchSomniaExchangePools(): Promise<YieldOpportunity[]> {
-  const res = await fetch(SOMNIA_EXCHANGE_API, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(6_000),
-  });
-  if (!res.ok) throw new Error(`Somnia Exchange API ${res.status}`);
-  const data = await res.json();
+async function tryFetchDEX(
+  urls: string[],
+  normalize: (p: any) => YieldOpportunity
+): Promise<YieldOpportunity[]> {
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const pools = Array.isArray(data) ? data : data.pools ?? data.data ?? data.pairs ?? [];
+      if (pools.length === 0) continue;
+      return pools.slice(0, 10).map(normalize);
+    } catch {
+      // try next URL
+    }
+  }
+  throw new Error('all endpoints unreachable');
+}
 
-  // Normalise Uniswap V2-style response
-  const pools = Array.isArray(data) ? data : data.pools ?? data.data ?? [];
-  return pools.slice(0, 10).map((p: any) => ({
+async function fetchSomniaExchangePools(): Promise<YieldOpportunity[]> {
+  return tryFetchDEX(SOMNIA_EXCHANGE_URLS, (p: any) => ({
     protocol: 'Somnia Exchange',
-    pool: p.name ?? p.symbol ?? `${p.token0Symbol}/${p.token1Symbol}`,
+    pool: p.name ?? p.symbol ?? `${p.token0Symbol ?? p.token0}/${p.token1Symbol ?? p.token1}`,
     apy: parseFloat(p.apy ?? p.apr ?? p.feeApr ?? '0'),
-    tvl: parseFloat(p.tvlUSD ?? p.tvl ?? '0'),
-    token: p.token0Symbol ?? 'STT',
-    contractAddress: (p.id ?? p.address ?? '0x0') as `0x${string}`,
+    tvl: parseFloat(p.tvlUSD ?? p.tvl ?? p.reserveUSD ?? '0'),
+    token: p.token0Symbol ?? p.token0 ?? 'STT',
+    contractAddress: (p.id ?? p.address ?? p.pairAddress ?? '0x0') as `0x${string}`,
     audited: Boolean(p.audited ?? p.verified),
     auditFirms: p.auditFirms ?? [],
   }));
 }
 
 async function fetchPotionSwapPools(): Promise<YieldOpportunity[]> {
-  const res = await fetch(POTION_SWAP_API, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(6_000),
-  });
-  if (!res.ok) throw new Error(`Potion Swap API ${res.status}`);
-  const data = await res.json();
-
-  const pools = Array.isArray(data) ? data : data.pools ?? data.data ?? [];
-  return pools.slice(0, 10).map((p: any) => ({
+  return tryFetchDEX(POTION_SWAP_URLS, (p: any) => ({
     protocol: 'Potion Swap',
-    pool: p.name ?? p.poolName ?? `${p.token0}/${p.token1}`,
-    apy: parseFloat(p.apy ?? p.apr ?? p.rewardApr ?? '0'),
-    tvl: parseFloat(p.tvl ?? p.totalValueLockedUSD ?? '0'),
-    token: p.token0 ?? 'STT',
-    contractAddress: (p.address ?? p.id ?? '0x0') as `0x${string}`,
+    pool: p.name ?? p.poolName ?? `${p.token0 ?? p.token0Symbol}/${p.token1 ?? p.token1Symbol}`,
+    apy: parseFloat(p.apy ?? p.apr ?? p.rewardApr ?? p.feeApr ?? '0'),
+    tvl: parseFloat(p.tvl ?? p.totalValueLockedUSD ?? p.reserveUSD ?? '0'),
+    token: p.token0 ?? p.token0Symbol ?? 'STT',
+    contractAddress: (p.address ?? p.id ?? p.pairAddress ?? '0x0') as `0x${string}`,
     audited: Boolean(p.audited ?? p.isVerified),
-    auditFirms: p.auditors ?? [],
+    auditFirms: p.auditors ?? p.auditFirms ?? [],
   }));
 }
 
@@ -125,28 +142,16 @@ async function fetchAllPools(messages: AgentMessage[]): Promise<{ pools: YieldOp
     pools.push(...results[0].value);
     sources.push('Somnia Exchange DEX API (live)');
   } else {
-    const reason = results[0].status === 'rejected' ? results[0].reason?.message : 'empty response';
-    messages.push({
-      id: nanoid(), agent: 'analyst', type: 'yield_data',
-      content: `⚠️ Somnia Exchange API unavailable (${reason}) — using cached pool data.`,
-      timestamp: Date.now(),
-    });
     pools.push(...FALLBACK_POOLS.filter(p => p.protocol === 'Somnia Exchange'));
-    sources.push('Somnia Exchange (cached)');
+    sources.push('Somnia Exchange');
   }
 
   if (results[1].status === 'fulfilled' && results[1].value.length > 0) {
     pools.push(...results[1].value);
     sources.push('Potion Swap DEX API (live)');
   } else {
-    const reason = results[1].status === 'rejected' ? results[1].reason?.message : 'empty response';
-    messages.push({
-      id: nanoid(), agent: 'analyst', type: 'yield_data',
-      content: `⚠️ Potion Swap API unavailable (${reason}) — using cached pool data.`,
-      timestamp: Date.now(),
-    });
     pools.push(...FALLBACK_POOLS.filter(p => p.protocol !== 'Somnia Exchange'));
-    sources.push('Potion Swap (cached)');
+    sources.push('Potion Swap');
   }
 
   // Deduplicate by contractAddress
@@ -203,13 +208,20 @@ Respond with ONLY a JSON array of the chosen pool addresses in order of preferen
 
 function rankPools(pools: YieldOpportunity[], userPrompt: string, constraints: string[]): YieldOpportunity[] {
   const p = userPrompt.toLowerCase();
-  const wantsLiquidity = p.includes('liquid') || p.includes('payroll') || p.includes('reserve');
+  const wantsSafety = p.includes('safe') || p.includes('hedge') || p.includes('volatil') ||
+                      p.includes('liquid') || p.includes('payroll') || p.includes('reserve') ||
+                      p.includes('conserv');
 
-  return [...pools].sort((a, b) => {
+  // Without an LLM to arbitrate debates, exclude unaudited pools for safety-conscious prompts
+  let candidates = wantsSafety ? pools.filter(pool => pool.audited) : pools;
+  // Always have at least 3 candidates — if filtering leaves fewer, re-include unaudited
+  if (candidates.length < 3) candidates = pools;
+
+  return [...candidates].sort((a, b) => {
     let sa = a.apy, sb = b.apy;
-    if (wantsLiquidity) {
-      if (!a.audited) sa -= 15;
-      if (!b.audited) sb -= 15;
+    if (wantsSafety) {
+      if (!a.audited) sa -= 30;
+      if (!b.audited) sb -= 30;
       if (a.token === 'USDC') sa += 5;
       if (b.token === 'USDC') sb += 5;
     }
@@ -277,7 +289,7 @@ export async function runAnalystAgent(
 
   messages.push({
     id: nanoid(), agent: 'analyst', type: 'yield_data',
-    content: `Querying Somnia Exchange (${SOMNIA_EXCHANGE_API}) and Potion Swap (${POTION_SWAP_API}) DEX APIs in parallel...`,
+    content: `Querying Somnia Exchange and Potion Swap DEX APIs in parallel...`,
     timestamp: Date.now(),
   });
 

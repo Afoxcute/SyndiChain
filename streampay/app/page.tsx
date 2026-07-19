@@ -25,7 +25,7 @@ const AGENTS = [
     icon: Brain,
     color: 'text-purple-400',
     bg: 'bg-purple-500/10 border-purple-500/30',
-    model: 'Qwen-Max',
+    model: 'Qwen-Plus',
     desc: 'Parses treasury goals, decomposes tasks, mediates debate rounds, routes to human when stuck.',
   },
   {

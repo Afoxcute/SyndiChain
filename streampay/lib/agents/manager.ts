@@ -49,7 +49,7 @@ Respond with JSON in this exact format:
       agent: 'manager',
       type: 'task_decomposition',
       content:
-        `[${provider === 'qwen' ? 'Qwen-Max' : provider === 'claude' ? 'Claude Sonnet' : 'LLM'} reasoning]\n\n` +
+        `[${provider === 'qwen' ? 'Qwen-Plus' : provider === 'claude' ? 'Claude Sonnet' : 'LLM'} reasoning]\n\n` +
         `Analyzing: "${userPrompt}"\n\n` +
         `Decomposed into ${parsed.subTasks?.length ?? 4} parallel tasks.\n` +
         `Constraints identified: ${parsed.constraints?.join(', ') || 'none'}\n` +
@@ -59,16 +59,18 @@ Respond with JSON in this exact format:
     });
 
     return { messages, subTasks: parsed.subTasks ?? defaultSubTasks(userPrompt), llmProvider: provider };
-  } catch {
+  } catch (err: any) {
     const subTasks = defaultSubTasks(userPrompt);
+    const errMsg = err?.message ?? String(err);
     messages.push({
       id: nanoid(),
       agent: 'manager',
       type: 'task_decomposition',
       content:
-        `[Fallback decomposition — no LLM key configured]\n\n` +
+        `[Fallback decomposition — LLM call failed]\n\n` +
+        `Error: ${errMsg}\n\n` +
         `Decomposing "${userPrompt}" into ${subTasks.length} parallel sub-tasks for the swarm.`,
-      data: { subTasks, constraints: [], summary: userPrompt },
+      data: { subTasks, constraints: [], summary: userPrompt, error: errMsg },
       timestamp: Date.now(),
     });
     return { messages, subTasks, llmProvider: 'none' };
@@ -122,7 +124,7 @@ Rules:
       agent: 'manager',
       type: roundNumber >= 2 ? 'consensus' : 'debate_response',
       content:
-        `[${provider === 'qwen' ? 'Qwen-Max' : 'Claude Sonnet'} arbitration — Round ${roundNumber}]\n\n` +
+        `[${provider === 'qwen' ? 'Qwen-Plus' : 'Claude Sonnet'} arbitration — Round ${roundNumber}]\n\n` +
         `Verdict: **${String(parsed.verdict).toUpperCase()}** (confidence: ${parsed.confidence}%)\n\n` +
         `${parsed.reasoning}`,
       data: parsed,

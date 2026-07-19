@@ -24,7 +24,7 @@ async function callQwen(
   mode: LLMMode,
   apiKey: string
 ): Promise<string> {
-  const model = mode === 'reasoning' ? 'qwen-max' : 'qwen-turbo';
+  const model = mode === 'reasoning' ? 'qwen-plus' : 'qwen-turbo';
 
   const response = await fetch(
     'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
