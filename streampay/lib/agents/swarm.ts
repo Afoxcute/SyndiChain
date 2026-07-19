@@ -219,30 +219,35 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
 
   session.humanDecision = decision;
 
+  if (decision === 'rejected') {
+    session.messages.push({
+      id: nanoid(), agent: 'manager', type: 'human_decision',
+      content: `Human rejected the proposal. Swarm halted.`,
+      timestamp: Date.now(),
+    });
+    session.status = 'complete';
+    session.completedAt = Date.now();
+    return true;
+  }
+
+  // Normal flow: Execution + Compliance already ran — just mark complete
+  if (!session.needsPostApprovalPipeline) {
+    session.messages.push({
+      id: nanoid(), agent: 'manager', type: 'human_decision',
+      content: `Human approved the transaction. Submitting to Somnia blockchain...`,
+      timestamp: Date.now(),
+    });
+    session.status = 'complete';
+    session.completedAt = Date.now();
+    return true;
+  }
+
+  // Debate escalation path: pipeline was interrupted before Execution ran
   session.messages.push({
-    id: nanoid(),
-    agent: 'manager',
-    type: 'human_decision',
-    content:
-      decision === 'approved'
-        ? `Human approved. Resuming swarm pipeline — running Execution and Compliance agents...`
-        : `Human rejected the proposal. Swarm halted.`,
+    id: nanoid(), agent: 'manager', type: 'human_decision',
+    content: `Human approved. Running Execution and Compliance agents...`,
     timestamp: Date.now(),
   });
-
-  if (decision === 'rejected') {
-    session.status = 'complete';
-    session.completedAt = Date.now();
-    return true;
-  }
-
-  // Only resume pipeline if human was asked mid-debate (before Execution ran)
-  if (!session.needsPostApprovalPipeline) {
-    session.status = 'complete';
-    session.completedAt = Date.now();
-    return true;
-  }
-
   session.needsPostApprovalPipeline = false;
   session.status = 'running';
   resumeAfterHumanApproval(sessionId).catch((err) => {
