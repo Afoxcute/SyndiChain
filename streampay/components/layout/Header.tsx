@@ -16,6 +16,7 @@ import {
   PlusCircle,
   Swords,
   FlaskConical,
+  Waves,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'War Room', href: '/war-room', icon: Swords },
   { name: 'Benchmark', href: '/benchmark', icon: FlaskConical },
   { name: 'Create Stream', href: '/create', icon: PlusCircle },
+  { name: 'My Streams', href: '/streams', icon: Waves },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
 ];
 
