@@ -14,8 +14,6 @@ import {
   Zap,
   BarChart3,
   PlusCircle,
-  Layers,
-  Home,
   Swords,
   FlaskConical,
 } from 'lucide-react';
@@ -23,7 +21,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: Home },
   { name: 'War Room', href: '/war-room', icon: Swords },
   { name: 'Benchmark', href: '/benchmark', icon: FlaskConical },
   { name: 'Create Stream', href: '/create', icon: PlusCircle },

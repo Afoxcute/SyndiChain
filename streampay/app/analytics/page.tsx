@@ -1,315 +1,317 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useProtocolStats, useActiveStreams } from '@/hooks/useStreamContract';
-import { useFactoryStats } from '@/hooks/useTemplates';
-import { formatWeiToEther } from '@/lib/utils';
-import { 
-  Activity, 
-  TrendingUp, 
-  Users, 
-  Clock,
-  BarChart3,
-  Zap,
-  DollarSign,
-  Target
+import { SwarmSession } from '@/lib/agents/types';
+import {
+  Activity, TrendingUp, Zap, ShieldAlert, Brain,
+  BarChart3, CheckCircle, XCircle, Clock, Swords,
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell,
+} from 'recharts';
 
 const containerVariants = {
   hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1
-    }
-  }
+  visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
 };
-
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 }
+  visible: { opacity: 1, y: 0 },
 };
 
-// Mock data for charts (in real app, this would come from your backend)
-const streamActivityData = [
-  { name: 'Jan', streams: 12, volume: 45.2 },
-  { name: 'Feb', streams: 19, volume: 78.1 },
-  { name: 'Mar', streams: 25, volume: 102.3 },
-  { name: 'Apr', streams: 18, volume: 89.7 },
-  { name: 'May', streams: 32, volume: 134.5 },
-  { name: 'Jun', streams: 28, volume: 116.8 },
-];
+interface SwarmStats {
+  totalSessions: number;
+  completed: number;
+  failed: number;
+  totalMessages: number;
+  totalDebateRounds: number;
+  humanApprovals: number;
+  humanRejections: number;
+  avgMessages: number;
+  agentActivity: { name: string; messages: number; color: string }[];
+  sessionHistory: { label: string; messages: number; status: string }[];
+  recentSessions: SwarmSession[];
+}
 
-const streamTypeData = [
-  { name: 'Work', value: 65, color: '#10b981' },
-  { name: 'Subscription', value: 25, color: '#8b5cf6' },
-  { name: 'Gaming', value: 10, color: '#f59e0b' },
-];
+function computeStats(sessions: SwarmSession[]): SwarmStats {
+  const completed = sessions.filter(s => s.status === 'complete').length;
+  const failed = sessions.filter(s => s.status === 'failed').length;
+  const totalMessages = sessions.reduce((sum, s) => sum + s.messages.length, 0);
+  const totalDebateRounds = sessions.reduce((sum, s) => sum + (s.debateRound ?? 0), 0);
+  const humanApprovals = sessions.filter(s => s.humanDecision === 'approved').length;
+  const humanRejections = sessions.filter(s => s.humanDecision === 'rejected').length;
 
-const performanceData = [
-  { name: 'Updates/Hour', value: 3600 },
-  { name: 'Avg Response', value: 0.2 },
-  { name: 'Success Rate', value: 99.8 },
-  { name: 'Gas Efficiency', value: 85 },
-];
+  const agentCounts = { manager: 0, analyst: 0, risk: 0, execution: 0, compliance: 0 };
+  sessions.forEach(s => s.messages.forEach(m => { agentCounts[m.agent] = (agentCounts[m.agent] ?? 0) + 1; }));
+
+  const agentActivity = [
+    { name: 'Manager', messages: agentCounts.manager, color: '#a855f7' },
+    { name: 'Analyst', messages: agentCounts.analyst, color: '#3b82f6' },
+    { name: 'Risk', messages: agentCounts.risk, color: '#ef4444' },
+    { name: 'Execution', messages: agentCounts.execution, color: '#22c55e' },
+    { name: 'Compliance', messages: agentCounts.compliance, color: '#eab308' },
+  ];
+
+  const sessionHistory = sessions.slice(0, 8).reverse().map((s, i) => ({
+    label: `Run ${i + 1}`,
+    messages: s.messages.length,
+    status: s.status,
+  }));
+
+  return {
+    totalSessions: sessions.length,
+    completed,
+    failed,
+    totalMessages,
+    totalDebateRounds,
+    humanApprovals,
+    humanRejections,
+    avgMessages: sessions.length ? Math.round(totalMessages / sessions.length) : 0,
+    agentActivity,
+    sessionHistory,
+    recentSessions: sessions.slice(0, 5),
+  };
+}
+
+const outcomeData = (stats: SwarmStats) => [
+  { name: 'Approved', value: stats.humanApprovals, color: '#22c55e' },
+  { name: 'Rejected', value: stats.humanRejections, color: '#ef4444' },
+  { name: 'In Progress', value: stats.totalSessions - stats.completed - stats.failed, color: '#3b82f6' },
+].filter(d => d.value > 0);
 
 export default function AnalyticsPage() {
-  const { stats: protocolStats, isLoading: protocolLoading } = useProtocolStats();
-  const { stats: factoryStats, isLoading: factoryLoading } = useFactoryStats();
-  const { activeStreamIds } = useActiveStreams();
+  const [sessions, setSessions] = useState<SwarmSession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/swarm')
+      .then(r => r.json())
+      .then(data => { setSessions(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const stats = computeStats(sessions);
+  const pie = outcomeData(stats);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-8"
-    >
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-8">
       {/* Header */}
       <motion.div variants={itemVariants} className="text-center">
-        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-somnia-500 to-somnia-700 bg-clip-text text-transparent">
-          Analytics Dashboard
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+          SyndiChain Analytics
         </h1>
-        <p className="text-muted-foreground max-w-2xl mx-auto">
-          Real-time insights into StreamPay protocol performance, usage patterns, and network statistics.
-        </p>
+        <p className="text-muted-foreground">Live swarm session performance across all War Room runs</p>
       </motion.div>
 
-      {/* Key Metrics */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Volume</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {protocolStats?.totalVolume ? `${formatWeiToEther(protocolStats.totalVolume, 1)}` : '0'} STT
-            </div>
-            <p className="text-xs text-muted-foreground">
-              <TrendingUp className="inline h-3 w-3 mr-1" />
-              +12.5% from last month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Streams</CardTitle>
-            <Activity className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {protocolStats?.activeStreams || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Real-time streaming
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Updates</CardTitle>
-            <Zap className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {protocolStats?.totalUpdates?.toLocaleString() || '0'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Balance updates performed
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Templates Used</CardTitle>
-            <Target className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {factoryStats?.streamsFromTemplates || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Streams from templates
-            </p>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Stream Activity Chart */}
+      {loading ? (
+        <div className="text-center text-muted-foreground py-20">Loading session data...</div>
+      ) : stats.totalSessions === 0 ? (
         <motion.div variants={itemVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5" />
-                <span>Stream Activity</span>
-              </CardTitle>
-              <CardDescription>
-                Monthly stream creation and volume trends
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={streamActivityData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line 
-                      type="monotone" 
-                      dataKey="streams" 
-                      stroke="#0ea5e9" 
-                      strokeWidth={2}
-                      name="Streams Created"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="volume" 
-                      stroke="#10b981" 
-                      strokeWidth={2}
-                      name="Volume (STT)"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+          <Card className="border-purple-500/30 bg-purple-500/5">
+            <CardContent className="p-12 text-center space-y-3">
+              <Swords className="h-12 w-12 text-purple-400 mx-auto" />
+              <p className="text-lg font-semibold">No swarm sessions yet</p>
+              <p className="text-sm text-muted-foreground">
+                Run a swarm in the <a href="/war-room" className="text-purple-400 underline">War Room</a> to start seeing analytics.
+              </p>
             </CardContent>
           </Card>
         </motion.div>
+      ) : (
+        <>
+          {/* KPI Cards */}
+          <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-medium">Total Runs</CardTitle>
+                <Brain className="h-4 w-4 text-purple-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-purple-400">{stats.totalSessions}</div>
+                <p className="text-xs text-muted-foreground mt-1">{stats.completed} completed · {stats.failed} failed</p>
+              </CardContent>
+            </Card>
 
-        {/* Stream Types Distribution */}
-        <motion.div variants={itemVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Users className="h-5 w-5" />
-                <span>Stream Types</span>
-              </CardTitle>
-              <CardDescription>
-                Distribution of stream types across the platform
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={streamTypeData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {streamTypeData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              <div className="flex justify-center space-x-4 mt-4">
-                {streamTypeData.map((item) => (
-                  <div key={item.name} className="flex items-center space-x-2">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-sm text-muted-foreground">{item.name}</span>
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-medium">Agent Messages</CardTitle>
+                <Activity className="h-4 w-4 text-blue-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-400">{stats.totalMessages}</div>
+                <p className="text-xs text-muted-foreground mt-1">~{stats.avgMessages} per session</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-medium">Debate Rounds</CardTitle>
+                <ShieldAlert className="h-4 w-4 text-red-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-red-400">{stats.totalDebateRounds}</div>
+                <p className="text-xs text-muted-foreground mt-1">Risk veto triggers</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-medium">Human Approvals</CardTitle>
+                <CheckCircle className="h-4 w-4 text-green-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-400">{stats.humanApprovals}</div>
+                <p className="text-xs text-muted-foreground mt-1">{stats.humanRejections} rejected</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Agent Activity */}
+            <motion.div variants={itemVariants}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-purple-400" />
+                    Agent Activity
+                  </CardTitle>
+                  <CardDescription>Total messages sent per agent across all sessions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={stats.agentActivity}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="messages" radius={[4, 4, 0, 0]}>
+                          {stats.agentActivity.map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Outcome Distribution */}
+            <motion.div variants={itemVariants}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-yellow-400" />
+                    Governance Outcomes
+                  </CardTitle>
+                  <CardDescription>Human approval decisions across all swarm runs</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {pie.length > 0 ? (
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pie}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={90}
+                            dataKey="value"
+                            label={({ name, value }) => `${name}: ${value}`}
+                            labelLine={false}
+                          >
+                            {pie.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+                      No governance decisions yet — approve or reject a swarm proposal
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Session history bar chart */}
+            {stats.sessionHistory.length > 0 && (
+              <motion.div variants={itemVariants} className="lg:col-span-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-blue-400" />
+                      Messages per Session
+                    </CardTitle>
+                    <CardDescription>Agent message volume for each swarm run (most recent 8)</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stats.sessionHistory}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip />
+                          <Bar dataKey="messages" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Recent Sessions */}
+          <motion.div variants={itemVariants}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  Recent Sessions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {stats.recentSessions.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-xs border rounded-md px-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-foreground/80">{s.userPrompt}</p>
+                      <p className="text-muted-foreground mt-0.5">
+                        {s.messages.length} messages · {s.debateRound > 0 ? `${s.debateRound} debate round(s) · ` : ''}
+                        {new Date(s.startedAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="ml-3 flex items-center gap-2 shrink-0">
+                      {s.humanDecision === 'approved' && <CheckCircle className="h-3.5 w-3.5 text-green-400" />}
+                      {s.humanDecision === 'rejected' && <XCircle className="h-3.5 w-3.5 text-red-400" />}
+                      <Badge
+                        className={`text-[10px] ${
+                          s.status === 'complete' ? 'bg-green-500' :
+                          s.status === 'failed' ? 'bg-red-500' :
+                          s.status === 'running' || s.status === 'debating' ? 'bg-blue-500 animate-pulse' :
+                          'bg-yellow-500'
+                        }`}
+                      >
+                        {s.status}
+                      </Badge>
+                    </div>
                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Performance Metrics */}
-      <motion.div variants={itemVariants}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Clock className="h-5 w-5" />
-              <span>Network Performance</span>
-            </CardTitle>
-            <CardDescription>
-              Real-time protocol performance and efficiency metrics
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={performanceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#0ea5e9" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Protocol Status */}
-      <motion.div variants={itemVariants}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Activity className="h-5 w-5" />
-              <span>Protocol Status</span>
-            </CardTitle>
-            <CardDescription>
-              Current protocol health and operational metrics
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
-                <div>
-                  <p className="text-sm font-medium text-green-700 dark:text-green-300">Protocol Status</p>
-                  <p className="text-2xl font-bold text-green-600">Operational</p>
-                </div>
-                <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                <div>
-                  <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Last Update</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    {protocolStats?.lastUpdate ? 
-                      new Date(protocolStats.lastUpdate * 1000).toLocaleTimeString() : 
-                      'Unknown'
-                    }
-                  </p>
-                </div>
-                <Clock className="h-6 w-6 text-blue-500" />
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
-                <div>
-                  <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Network Load</p>
-                  <p className="text-2xl font-bold text-purple-600">Low</p>
-                </div>
-                <BarChart3 className="h-6 w-6 text-purple-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </>
+      )}
     </motion.div>
   );
 }
