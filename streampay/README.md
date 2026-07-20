@@ -1,6 +1,6 @@
 # SyndiChain — streampay
 
-Next.js 14 frontend + keeper bot for the SyndiChain multi-agent treasury system. Runs standalone (`output: 'standalone'`), containerized via Docker with a co-located Redis instance.
+Next.js 14 frontend + keeper bot for the SyndiChain multi-agent treasury system. Runs standalone (`output: 'standalone'`), containerized via Docker. Uses a cloud Redis instance for session persistence.
 
 ## Development
 
@@ -48,8 +48,10 @@ NEXT_PUBLIC_STREAM_FACTORY_ADDRESS=
 # Keeper bot signs approved transactions + calls batchUpdateStreams every 10s
 KEEPER_PRIVATE_KEY=
 
-# Redis — persists swarm sessions across restarts (optional locally)
-REDIS_URL=redis://localhost:6379
+# Redis — persists swarm sessions across restarts
+# Point to your cloud Redis (Upstash, Redis Cloud, etc.)
+# Leave blank to disable persistence (sessions in-memory only)
+REDIS_URL=
 
 # WalletConnect
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
@@ -126,7 +128,12 @@ In Docker: `docker-entrypoint.sh` starts the compiled keeper as a background pro
 
 `swarm.ts` uses a hybrid store: in-memory Map for active in-flight sessions (no Redis latency per message push), plus `saveSession()` called after every agent step. On cold start, `getSession()` checks Redis as a fallback — sessions survive server restarts.
 
-If `REDIS_URL` is not set, the store silently no-ops and sessions exist only in memory.
+If `REDIS_URL` is not set, the store silently no-ops and sessions exist only in memory for the lifetime of the process.
+
+**Production** — set `REDIS_URL` to your cloud Redis URL (Upstash, Redis Cloud, etc.):
+```
+REDIS_URL=rediss://default:<password>@<host>:<port>
+```
 
 ## Docker
 
@@ -137,7 +144,7 @@ The container is built by the root `Dockerfile` (multi-stage):
 
 `ioredis` is a webpack external (it has native bindings Next.js can't bundle), so it and its peer dependencies (`@ioredis`, `cluster-key-slot`, `denque`) are explicitly copied into `standalone/node_modules/` in the Dockerfile.
 
-For production, run via `docker compose` from the repo root — this starts Redis first, waits for it to be healthy, then starts the app with `REDIS_URL=redis://redis:6379` injected automatically.
+For production, run via `docker compose` from the repo root — a single app container starts and connects to your cloud Redis via `REDIS_URL` from `.env.app`. The app is exposed on port 80.
 
 ## Key Technical Notes
 

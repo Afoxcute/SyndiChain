@@ -1,16 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
   app:
     image: ${APP_IMAGE:-syndichain:latest}
     restart: unless-stopped
@@ -18,11 +6,4 @@ services:
       - "80:3000"
     env_file:
       - ./.env.app          # on server: ~/syndichain/.env.app
-    environment:
-      - REDIS_URL=redis://redis:6379   # overrides any REDIS_URL in .env.app
-    depends_on:
-      redis:
-        condition: service_healthy
-
-volumes:
-  redis-data:
+    # REDIS_URL must be set in .env.app pointing to your cloud Redis

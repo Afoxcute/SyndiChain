@@ -113,7 +113,7 @@ SyndiChain/
 │   └── workflows/
 │       └── ci-cd.yml              # Typecheck → Docker build/push → SSH deploy (compose)
 ├── Dockerfile                     # Multi-stage: Next.js standalone + compiled keeper
-├── docker-compose.yml             # Production: app + Redis:7-alpine with healthcheck
+├── docker-compose.yml             # Production: single app container, cloud Redis via REDIS_URL
 ├── contracts/
 │   ├── contracts/
 │   │   ├── TreasuryPolicy.sol
@@ -197,14 +197,14 @@ To run Next.js only (no keeper):
 npm run dev:next
 ```
 
-### Run Locally with Docker + Redis
+### Run Locally with Docker
 
 ```bash
-cp streampay/.env.example streampay/.env.local  # fill in values
+cp streampay/.env.example streampay/.env.local  # fill in values, including REDIS_URL
 docker compose up
 ```
 
-This starts Redis + the app together. Sessions persist across restarts.
+The app container connects to your cloud Redis via `REDIS_URL` in `.env.local`.
 
 ### Environment Variables (`streampay/.env.local`)
 
@@ -223,8 +223,9 @@ NEXT_PUBLIC_STREAM_FACTORY_ADDRESS=0x0781293537e5bb80f23dee95f095d8e94a6537d8
 # Keeper — signs approved multicall TXs + calls batchUpdateStreams every 10s
 KEEPER_PRIVATE_KEY=                        # Somnia testnet wallet private key
 
-# Redis — persists swarm sessions across restarts (injected automatically by docker-compose)
-REDIS_URL=redis://localhost:6379           # leave blank if not using Redis locally
+# Redis — persists swarm sessions across restarts
+# Use your cloud Redis URL (Upstash, Redis Cloud, etc.)
+REDIS_URL=                                 # leave blank to disable persistence
 
 # Wallet connection
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=      # From cloud.walletconnect.com
@@ -259,7 +260,7 @@ docker-entrypoint.sh
   │       every 10s: batchUpdateStreams on all active streams
   │
   └─ exec node standalone/server.js                    ← foreground (PID 1)
-        connects to Redis via REDIS_URL at runtime
+        connects to cloud Redis via REDIS_URL from .env.app
 ```
 
 ### CI/CD via GitHub Actions
@@ -290,21 +291,19 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_wc_id
 QWEN_API_KEY=your_qwen_key
 ANTHROPIC_API_KEY=your_anthropic_key
 KEEPER_PRIVATE_KEY=your_somnia_testnet_private_key
-REDIS_URL=redis://redis:6379
+REDIS_URL=rediss://default:<password>@<host>:<port>   # your cloud Redis URL
 ```
 
 ```bash
 chmod 600 ~/syndichain/.env.app
 ```
 
-`REDIS_URL` is also injected by `docker-compose.yml` via the `environment:` block, so the app always connects to the co-located Redis container regardless of what's in `.env.app`.
-
 ### What docker-compose.yml provides
 
-- **Redis 7 Alpine** — persistent volume (`redis-data`), append-only mode, healthcheck
-- **App container** — waits for Redis healthy before starting, `REDIS_URL` auto-injected
+- **Single app container** — exposes port 80 (maps to internal 3000)
+- Connects to your external cloud Redis via `REDIS_URL` from `.env.app`
 - Sessions stored under key prefix `syndichain:session:*` with 24-hour TTL
-- Swarm session state written to Redis after every agent step — polling works across restarts
+- Swarm session state written to Redis after every agent step — survives restarts
 
 ---
 
