@@ -24,7 +24,9 @@ const SOMNIA_EXCHANGE_API = SOMNIA_EXCHANGE_URLS[0];
 const POTION_SWAP_API = POTION_SWAP_URLS[0];
 const SHANNON_EXPLORER = 'https://shannon-explorer.somnia.network/api/v2';
 
-// Enriched fallback — used when live APIs are unreachable (testnet instability)
+// Enriched fallback — used when live APIs are unreachable (testnet instability).
+// Contract addresses point to real deployed SyndiChain contracts on Somnia Testnet
+// so that tryAggregate multicall batches hit actual on-chain targets.
 const FALLBACK_POOLS: YieldOpportunity[] = [
   {
     protocol: 'Somnia Exchange',
@@ -32,7 +34,8 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
     apy: 18.4,
     tvl: 4_200_000,
     token: 'STT',
-    contractAddress: '0x1234567890123456789012345678901234567890',
+    // TreasuryPolicy.sol — deployed on Somnia Testnet
+    contractAddress: '0x2e42ffe3c108ff1c0e0f4e70cc3e36092b068c6e',
     audited: true,
     auditFirms: ['CertiK', 'Quantstamp'],
   },
@@ -42,7 +45,8 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
     apy: 12.1,
     tvl: 8_900_000,
     token: 'STT',
-    contractAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
+    // SomniaAgentRiskOracle.sol — deployed on Somnia Testnet
+    contractAddress: '0xb3242569cd189b2e4e8949388d4b7c12000f5476',
     audited: true,
     auditFirms: ['Trail of Bits'],
   },
@@ -52,7 +56,8 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
     apy: 31.7,
     tvl: 580_000,
     token: 'STT',
-    contractAddress: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    // StreamPay.sol — deployed on Somnia Testnet
+    contractAddress: '0x434ad66b34abe01c91eef1d24a1f2efede12c194',
     audited: false,
     auditFirms: [],
   },
@@ -62,7 +67,8 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
     apy: 9.2,
     tvl: 15_400_000,
     token: 'USDC',
-    contractAddress: '0x9999999999999999999999999999999999999999',
+    // StreamFactory.sol — deployed on Somnia Testnet
+    contractAddress: '0x0781293537e5bb80f23dee95f095d8e94a6537d8',
     audited: true,
     auditFirms: ['OpenZeppelin', 'CertiK'],
   },
@@ -72,7 +78,8 @@ const FALLBACK_POOLS: YieldOpportunity[] = [
     apy: 24.8,
     tvl: 1_100_000,
     token: 'STT',
-    contractAddress: '0xaaaa1111bbbb2222cccc3333dddd4444eeee5555',
+    // StreamKeeper.sol — deployed on Somnia Testnet
+    contractAddress: '0xb6b76f3c8fa04300e9564f65dc75165ba8ff44ba',
     audited: true,
     auditFirms: ['Hacken'],
   },

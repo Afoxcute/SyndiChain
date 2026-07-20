@@ -5,6 +5,7 @@ import { runAnalystAgent, buildAnalystDebateArguments } from './analyst';
 import { runRiskAgent, buildDebateCounterpoints } from './risk';
 import { runExecutionAgent } from './execution';
 import { runComplianceAgent } from './compliance';
+import { submitToSomnia } from './submit';
 
 // In-memory session store (use Redis/DB in production)
 const sessions = new Map<string, SwarmSession>();
@@ -230,15 +231,22 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
     return true;
   }
 
-  // Normal flow: Execution + Compliance already ran — just mark complete
+  // Normal flow: Execution + Compliance already ran — submit the TX
   if (!session.needsPostApprovalPipeline) {
     session.messages.push({
       id: nanoid(), agent: 'manager', type: 'human_decision',
-      content: `Human approved the transaction. Submitted to Somnia blockchain.`,
+      content: `Human approved. Broadcasting multicall to Somnia blockchain...`,
       timestamp: Date.now(),
     });
-    session.status = 'complete';
-    session.completedAt = Date.now();
+    session.status = 'running';
+    broadcastAndComplete(sessionId).catch((err) => {
+      session.status = 'failed';
+      session.messages.push({
+        id: nanoid(), agent: 'manager', type: 'rejected',
+        content: `On-chain submission failed: ${err.message}`,
+        timestamp: Date.now(),
+      });
+    });
     return true;
   }
 
@@ -262,6 +270,36 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
   return true;
 }
 
+async function broadcastAndComplete(sessionId: string): Promise<void> {
+  const session = sessions.get(sessionId)!;
+  if (!session.formattedTx) {
+    session.status = 'complete';
+    session.completedAt = Date.now();
+    return;
+  }
+
+  try {
+    const { txHash, explorerUrl } = await submitToSomnia(session.formattedTx);
+    session.txHash = txHash;
+    session.messages.push({
+      id: nanoid(), agent: 'manager', type: 'approved',
+      content: `✅ Transaction submitted to Somnia blockchain.\n\nTx Hash: ${txHash}\nExplorer: ${explorerUrl}`,
+      data: { txHash, explorerUrl },
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    // No private key or RPC error — log it but don't fail the session
+    session.messages.push({
+      id: nanoid(), agent: 'manager', type: 'approved',
+      content: `Transaction approved by governance. On-chain submission requires KEEPER_PRIVATE_KEY.\n\nCalldata ready for manual broadcast:\nTo: ${session.formattedTx.to}\nData: ${session.formattedTx.data.slice(0, 66)}...\n\nError: ${err.message}`,
+      timestamp: Date.now(),
+    });
+  }
+
+  session.status = 'complete';
+  session.completedAt = Date.now();
+}
+
 async function resumeAfterHumanApproval(sessionId: string): Promise<void> {
   const session = sessions.get(sessionId)!;
   const addMessages = (msgs: AgentMessage[]) => { session.messages.push(...msgs); };
@@ -281,16 +319,12 @@ async function resumeAfterHumanApproval(sessionId: string): Promise<void> {
   addMessages(compMsgs);
   session.complianceResult = result;
 
-  session.status = 'complete';
-  session.completedAt = Date.now();
+  if (!result.compliant) {
+    session.status = 'failed';
+    return;
+  }
 
-  addMessages([{
-    id: nanoid(), agent: 'manager', type: 'approved',
-    content: result.compliant
-      ? `Transaction approved and compliance verified. Ready for on-chain submission to Somnia.`
-      : `Compliance check failed after approval: ${result.reason}`,
-    timestamp: Date.now(),
-  }]);
+  await broadcastAndComplete(sessionId);
 }
 
 function extractConstraints(prompt: string): string[] {

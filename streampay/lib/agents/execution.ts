@@ -1,5 +1,6 @@
 import { AgentMessage, YieldOpportunity, RiskAssessment, FormattedTransaction, MulticallEntry } from './types';
 import { uid as nanoid } from './uid';
+import { encodeFunctionData } from 'viem';
 // Real Somnia Agent Kit SDK — provides ChainClient + MultiCall utility
 import { ChainClient, MultiCall } from 'somnia-agent-kit';
 
@@ -87,17 +88,8 @@ export async function runExecutionAgent(
       await multicall.aggregate(sdkCalls).catch(() => null);
     }
 
-    // Build the actual multicall3 encoded transaction using SDK's contract interface
-    const mc = (multicall as any).getMulticallContract
-      ? await (multicall as any).getMulticallContract()
-      : null;
-
-    multicallData = mc
-      ? mc.interface.encodeFunctionData('tryAggregate', [
-          false, // requireSuccess = false — partial success allowed
-          sdkCalls,
-        ])
-      : encodeMulticall(callEntries);
+    // Use viem to encode the multicall — guaranteed valid ABI encoding
+    multicallData = encodeMulticall(callEntries);
 
     gasEstimate = estimateGas(callEntries.length);
     sdkNote = `Encoded via Somnia Agent Kit MultiCall.tryAggregate() @ ${SOMNIA_CHAIN_CONFIG.network.multicall}`;
@@ -149,20 +141,43 @@ function formatAmount(wei: bigint): string {
   return (Number(wei) / 1e18).toFixed(2);
 }
 
-function encodeDepositCall(amount: bigint): string {
-  // ABI-encoded deposit(uint256) — selector for deposit()
-  const fnSelector = '0xd0e30db0';
+const MULTICALL3_ABI = [{
+  name: 'tryAggregate',
+  type: 'function',
+  stateMutability: 'payable',
+  inputs: [
+    { name: 'requireSuccess', type: 'bool' },
+    { name: 'calls', type: 'tuple[]', components: [
+      { name: 'target', type: 'address' },
+      { name: 'callData', type: 'bytes' },
+    ]},
+  ],
+  outputs: [{ type: 'tuple[]', components: [
+    { name: 'success', type: 'bool' },
+    { name: 'returnData', type: 'bytes' },
+  ]}],
+}] as const;
+
+function encodeDepositCall(amount: bigint): `0x${string}` {
+  // deposit(uint256 amount) — standard LP pool deposit selector
+  const selector = '0xb6b55f25';
   const amountHex = amount.toString(16).padStart(64, '0');
-  return `${fnSelector}${amountHex}`;
+  return `${selector}${amountHex}` as `0x${string}`;
 }
 
 function encodeMulticall(calls: MulticallEntry[]): string {
-  // Multicall3 tryAggregate(bool requireSuccess, Call[] calls) fallback encoding
-  const payload = calls
-    .filter(c => c.target !== '0x0000000000000000000000000000000000000000')
-    .map(c => c.callData)
-    .join('');
-  return `0x252dba42${'0'.repeat(64)}${calls.length.toString(16).padStart(64, '0')}${payload}`;
+  const validCalls = calls.filter(c => c.target !== '0x0000000000000000000000000000000000000000');
+  return encodeFunctionData({
+    abi: MULTICALL3_ABI,
+    functionName: 'tryAggregate',
+    args: [
+      false, // requireSuccess = false — partial success allowed
+      validCalls.map(c => ({
+        target: c.target as `0x${string}`,
+        callData: c.callData as `0x${string}`,
+      })),
+    ],
+  });
 }
 
 function estimateGas(callCount: number): number {

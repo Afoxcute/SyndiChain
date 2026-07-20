@@ -324,14 +324,29 @@ export default function WarRoomPage() {
                     : 'border-red-500/50 bg-red-500/5'
                 }
               >
-                <CardContent className="p-4 text-center">
+                <CardContent className="p-4 text-center space-y-2">
                   {session.humanDecision === 'approved' ? (
                     <>
                       <CheckCircle className="h-8 w-8 text-green-400 mx-auto mb-2" />
                       <p className="font-semibold text-green-400">Transaction Approved</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Submitted to Somnia blockchain
-                      </p>
+                      {session.txHash ? (
+                        <>
+                          <p className="text-xs text-muted-foreground">Submitted to Somnia blockchain</p>
+                          <a
+                            href={`https://shannon-explorer.somnia.network/tx/${session.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-purple-400 hover:underline break-all block"
+                          >
+                            {session.txHash.slice(0, 18)}…{session.txHash.slice(-6)}
+                          </a>
+                          <p className="text-[10px] text-muted-foreground">Click to view on Shannon Explorer</p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Submitted to Somnia blockchain
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>

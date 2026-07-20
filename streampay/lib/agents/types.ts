@@ -90,6 +90,7 @@ export interface SwarmSession {
   formattedTx?: FormattedTransaction;
   complianceResult?: ComplianceResult;
   humanDecision?: 'approved' | 'rejected';
+  txHash?: string;
   startedAt: number;
   completedAt?: number;
   debateRound: number;
