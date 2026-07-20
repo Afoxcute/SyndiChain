@@ -114,7 +114,7 @@ function buildComplianceReport(result: ComplianceResult, requiresHuman: boolean)
 
   if (requiresHuman && result.compliant) {
     lines.push(
-      '\n⚠️ Amount exceeds multisig threshold. Routing to human approval queue via StreamPay dashboard.'
+      '\n⚠️ Amount exceeds multisig threshold. Routing to human approval queue via SyndiChain War Room.'
     );
   }
 

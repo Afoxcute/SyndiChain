@@ -58,7 +58,7 @@
   }
 }
 
-/* Custom animations for StreamPay */
+/* Custom animations for SyndiChain */
 @keyframes stream-flow {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
