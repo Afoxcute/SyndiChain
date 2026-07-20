@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: '../.env.local' });
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 import { 
   createWalletClient, 
   createPublicClient, 
@@ -14,12 +17,15 @@ import { optimizeBatching, Stream } from "./batch-optimizer";
 // import { saveKeeperLog, initializeDatabase } from "../lib/db";
 
 // 1. LOAD ENV VARS
-const STREAM_PAY_ADDRESS = process.env.STREAM_PAY_ADDRESS as `0x${string}`;
+const STREAM_PAY_ADDRESS = (
+  process.env.STREAM_PAY_ADDRESS ||
+  process.env.NEXT_PUBLIC_STREAM_PAY_ADDRESS
+) as `0x${string}`;
 const SOMNIA_RPC_URL = process.env.SOMNIA_RPC_URL || "https://dream-rpc.somnia.network";
 const KEEPER_PRIVATE_KEY = process.env.KEEPER_PRIVATE_KEY as `0x${string}`;
 
 if (!STREAM_PAY_ADDRESS || !KEEPER_PRIVATE_KEY) {
-  throw new Error("Missing STREAM_PAY_ADDRESS or KEEPER_PRIVATE_KEY in .env file");
+  throw new Error("Missing STREAM_PAY_ADDRESS (or NEXT_PUBLIC_STREAM_PAY_ADDRESS) or KEEPER_PRIVATE_KEY in .env file");
 }
 
 // 2. SETUP VIEM CLIENTS

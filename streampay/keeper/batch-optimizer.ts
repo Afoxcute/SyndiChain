@@ -1,9 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from 'openai';
 
 export interface Stream {
   id: number;
-  priority: "high" | "medium" | "low";
-  reward: number; // STT
+  priority: 'high' | 'medium' | 'low';
+  reward: number;
   flowRate: bigint;
 }
 
@@ -18,116 +18,100 @@ export interface BatchOptimizationResult {
   }[];
 }
 
-const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const MAX_BATCH_SIZE = 200;
 
-/**
- * AI-powered batch optimization
- * Runs once per 10-second cycle
- * Uses Gemini to decide if updating is profitable
- */
+function buildBatchesByPriority(streams: Stream[]): BatchOptimizationResult['batches'] {
+  const ordered = [
+    ...streams.filter((s) => s.priority === 'high'),
+    ...streams.filter((s) => s.priority === 'medium'),
+    ...streams.filter((s) => s.priority === 'low'),
+  ];
+
+  const batches: BatchOptimizationResult['batches'] = [];
+  for (let i = 0; i < ordered.length; i += MAX_BATCH_SIZE) {
+    const chunk = ordered.slice(i, i + MAX_BATCH_SIZE);
+    batches.push({
+      streamIds: chunk.map((s) => s.id),
+      count: chunk.length,
+      reason: `Batch ${batches.length + 1} — priority-ordered streams`,
+    });
+  }
+  return batches;
+}
+
 export async function optimizeBatching(
   pendingStreams: Stream[],
   gasPrice: bigint,
   rewardPerStream: number,
   ethPrice: number = 2000,
-  stmPrice: number = 20
+  sttPrice: number = 1
 ): Promise<BatchOptimizationResult> {
-  const baseGasPerBatch = 50000;
+  if (pendingStreams.length === 0) {
+    return { isProfitable: false, totalProfit: 0, decision: 'No streams to update', batches: [] };
+  }
+
+  const qwenKey = process.env.QWEN_API_KEY;
+
+  // Without Qwen key: always execute — on testnet keeping balances current is the priority
+  if (!qwenKey) {
+    const batches = buildBatchesByPriority(pendingStreams);
+    return {
+      isProfitable: true,
+      totalProfit: 0,
+      decision: `Updating ${pendingStreams.length} stream(s) in ${batches.length} batch(es) [no-AI mode]`,
+      batches,
+    };
+  }
+
+  const baseGasPerBatch = 50_000;
   const costPerBatchUSD = (Number(gasPrice) * baseGasPerBatch * ethPrice) / 1e18;
+  const revenueUSD = pendingStreams.length * rewardPerStream * sttPrice;
+  const numBatches = Math.ceil(pendingStreams.length / MAX_BATCH_SIZE);
+  const totalCostUSD = numBatches * costPerBatchUSD;
+  const estimatedProfit = revenueUSD - totalCostUSD;
 
-  const prompt = `
-You are a Keeper Bot Decision Engine for a payment streaming protocol on Somnia blockchain.
-Your job is to decide whether to execute batch updates right now based on profitability.
+  const prompt = `You are a keeper bot for a payment streaming protocol on Somnia testnet.
+Decide whether to run batchUpdateStreams now.
 
-MARKET CONDITIONS:
-- Current Gas Price: ${gasPrice} wei
-- ETH Price: $${ethPrice}
-- STM Price: $${stmPrice}
-- Cost per batch update (50000 gas): $${costPerBatchUSD.toFixed(4)}
-- Reward per stream updated: ${rewardPerStream} STM (~$${(rewardPerStream * stmPrice).toFixed(4)})
+Gas price: ${gasPrice} wei | Batches needed: ${numBatches} | Streams: ${pendingStreams.length}
+Cost: $${totalCostUSD.toFixed(4)} | Revenue: $${revenueUSD.toFixed(4)} | Profit: $${estimatedProfit.toFixed(4)}
+High: ${pendingStreams.filter((s) => s.priority === 'high').length} | Medium: ${pendingStreams.filter((s) => s.priority === 'medium').length} | Low: ${pendingStreams.filter((s) => s.priority === 'low').length}
 
-CONSTRAINTS:
-- Max batch size: 200 streams per transaction
-- Total pending streams to update: ${pendingStreams.length}
+NOTE: This is testnet — always return isProfitable: true to keep stream balances current for users.
 
-PENDING STREAMS (summary):
-- High priority: ${pendingStreams.filter((s) => s.priority === "high").length} streams
-- Medium priority: ${pendingStreams.filter((s) => s.priority === "medium").length} streams
-- Low priority: ${pendingStreams.filter((s) => s.priority === "low").length} streams
-
-PROFITABILITY CALCULATION:
-- Total potential revenue: ${pendingStreams.length} × $${(rewardPerStream * stmPrice).toFixed(4)} = $${(pendingStreams.length * rewardPerStream * stmPrice).toFixed(2)}
-- Number of batches needed: ${Math.ceil(pendingStreams.length / 200)}
-- Total gas cost: ${Math.ceil(pendingStreams.length / 200)} × $${costPerBatchUSD.toFixed(4)} = $${(Math.ceil(pendingStreams.length / 200) * costPerBatchUSD).toFixed(2)}
-- Estimated profit: $${(pendingStreams.length * rewardPerStream * stmPrice - Math.ceil(pendingStreams.length / 200) * costPerBatchUSD).toFixed(2)}
-
-YOUR DECISION:
-Analyze the numbers above and decide:
-1. Is it profitable to execute batch updates right now?
-2. If yes, how should we batch the streams? (High priority first, then medium, then low)
-3. What is the expected profit?
-
-Respond ONLY with this JSON (no markdown):
-{
-  "isProfitable": true/false,
-  "totalProfit": 0.15,
-  "decision": "Executing 2 batches. Gas is low and profit margin is good.",
-  "batches": [
-    {
-      "streamIds": [1, 5, 10, 25, ...],
-      "count": 100,
-      "reason": "High-priority streams"
-    },
-    {
-      "streamIds": [2, 3, 4, 6, ...],
-      "count": 100,
-      "reason": "Medium-priority streams"
-    }
-  ]
-}
-
-Keep the JSON compact and valid.
-`;
+Respond with ONLY valid JSON:
+{"isProfitable":true,"totalProfit":${estimatedProfit.toFixed(4)},"decision":"<one sentence>","batches":[{"streamIds":[${pendingStreams.map((s) => s.id).join(',')}],"count":${pendingStreams.length},"reason":"priority-ordered batch"}]}`;
 
   try {
-    const model = gemini.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1000,
-      },
+    const client = new OpenAI({
+      apiKey: qwenKey,
+      baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     });
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const response = await client.chat.completions.create({
+      model: 'qwen-turbo',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      max_tokens: 512,
+      temperature: 0.1,
+    });
 
-    // Extract JSON
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("Failed to parse batch optimizer response:", responseText);
-      return {
-        isProfitable: false,
-        totalProfit: 0,
-        decision: "AI response parsing failed",
-        batches: [],
-      };
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as BatchOptimizationResult;
-
+    const parsed = JSON.parse(response.choices[0].message.content || '{}') as BatchOptimizationResult;
     return {
-      isProfitable: parsed.isProfitable || false,
-      totalProfit: parsed.totalProfit || 0,
-      decision: parsed.decision || "Unable to decide",
-      batches: parsed.batches || [],
+      isProfitable: parsed.isProfitable ?? true,
+      totalProfit: parsed.totalProfit ?? estimatedProfit,
+      decision: parsed.decision ?? `Updating ${pendingStreams.length} stream(s)`,
+      batches: parsed.batches?.length ? parsed.batches : buildBatchesByPriority(pendingStreams),
     };
-  } catch (error) {
-    console.error("Batch optimization error:", error);
+  } catch (error: any) {
+    console.error('[keeper] Batch optimizer error:', error.message);
+    // Fall back to always-execute so streams never stall
+    const batches = buildBatchesByPriority(pendingStreams);
     return {
-      isProfitable: false,
+      isProfitable: true,
       totalProfit: 0,
-      decision: "Optimization error, skipping this cycle",
-      batches: [],
+      decision: `Fallback mode — updating ${pendingStreams.length} stream(s) in ${batches.length} batch(es)`,
+      batches,
     };
   }
 }

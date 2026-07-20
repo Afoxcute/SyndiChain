@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "outDir": "./keeper-dist",
+    "rootDir": ".",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "keeper/**/*.ts",
+    "lib/contracts.ts",
+    "lib/abis/StreamPay.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

@@ -1,0 +1,166 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Job 1: Typecheck & lint
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Typecheck & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: streampay/package-lock.json
+
+      - name: Install dependencies
+        working-directory: streampay
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: streampay
+        run: npx tsc --noEmit
+
+      - name: Lint
+        working-directory: streampay
+        run: npm run lint
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Job 2: Build Docker image and push to Docker Hub (push to main only)
+# ──────────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push Image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    env:
+      APP_IMAGE: ${{ secrets.DOCKER_USERNAME }}/syndichain:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ env.APP_IMAGE }}
+          cache-from: type=gha,scope=syndichain
+          cache-to: type=gha,mode=max,scope=syndichain
+          # NEXT_PUBLIC_* vars that contain secrets are NOT baked in here.
+          # They use __SYNDICHAIN_*__ placeholders replaced at container
+          # startup by docker-entrypoint.sh reading the server's .env.app.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Job 3: Deploy container to Ubuntu server
+# ──────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Ubuntu Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    env:
+      APP_IMAGE: ${{ secrets.DOCKER_USERNAME }}/syndichain:latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: APP_IMAGE
+          script: |
+            set -e
+            echo "=== Deployment started: $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+
+            APP_DIR="$HOME/syndichain"
+            APP_ENV="$APP_DIR/.env.app"
+
+            if [ ! -f "$APP_ENV" ]; then
+              echo "ERROR: Missing env file: $APP_ENV"
+              exit 1
+            fi
+
+            docker network create syndichain-net 2>/dev/null || true
+
+            echo "Pulling image..."
+            docker pull "$APP_IMAGE"
+
+            echo "Deploying app..."
+            docker stop syndichain 2>/dev/null || true
+            docker rm   syndichain 2>/dev/null || true
+            docker run -d \
+              --name syndichain \
+              --restart unless-stopped \
+              --network syndichain-net \
+              -p 3000:3000 \
+              --env-file "$APP_ENV" \
+              "$APP_IMAGE"
+
+            echo "Waiting for app to become healthy..."
+            for i in $(seq 1 24); do
+              if curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1; then
+                echo "App healthy after $((i * 5))s"
+                break
+              fi
+              if [ "$i" -eq 24 ]; then
+                echo "ERROR: App did not become healthy in 120s"
+                docker logs --tail 100 syndichain || true
+                exit 1
+              fi
+              sleep 5
+            done
+
+            docker image prune -f
+
+            echo ""
+            echo "=== Running containers ==="
+            docker ps --filter "name=syndichain" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            echo "=== Deployment complete: $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+
+      - name: Post-deploy health check
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "=== Post-deploy verification ==="
+
+            status=$(docker inspect syndichain --format='{{.State.Status}}' 2>/dev/null || echo "not found")
+            if [ "$status" != "running" ]; then
+              echo "FAIL: syndichain is $status"
+              docker logs --tail 50 syndichain 2>/dev/null || true
+              exit 1
+            fi
+
+            echo "OK: syndichain is running"
+            docker inspect syndichain --format='  Started: {{.State.StartedAt}}'
+            docker port syndichain
+            echo "All services healthy."

@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently --names \"next,keeper\" --prefix-colors \"cyan,yellow\" \"next dev\" \"npm run keeper\"",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "keeper": "npx ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" keeper/intelligent-keeper.ts"
+    "keeper": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" keeper/intelligent-keeper.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -32,6 +33,7 @@
     "framer-motion": "^11.3.0",
     "lucide-react": "^0.427.0",
     "next": "14.0.0",
+    "openai": "^6.48.0",
     "postcss": "^8.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -45,7 +47,10 @@
     "wagmi": "^2.12.0"
   },
   "devDependencies": {
+    "concurrently": "^10.0.3",
+    "dotenv": "^17.4.2",
     "eslint": "^8.0.0",
-    "eslint-config-next": "14.0.0"
+    "eslint-config-next": "14.0.0",
+    "ts-node": "^10.9.2"
   }
 }
