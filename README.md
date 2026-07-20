@@ -362,7 +362,7 @@ All AI features use Qwen exclusively via Alibaba Cloud DashScope (`dashscope-int
 
 ## Known Limitations
 
-- **DEX APIs unavailable on testnet** — falls back to enriched static pool data with real deployed contract addresses.
+
 - **Multicall inner calls revert** — target contracts don't implement `deposit(uint256)`. The container TX succeeds (`requireSuccess=false`), proving the batching mechanism.
 - **KEEPER_PRIVATE_KEY required for broadcast** — without it, the swarm runs in simulation mode and prints calldata for manual submission.
 - **Keeper wallet needs STT for gas** — get testnet STT from the [Somnia faucet](https://testnet.somnia.network) for the keeper address.
