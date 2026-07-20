@@ -58,7 +58,7 @@ async function runIntelligentKeeper() {
   setInterval(async () => {
     try {
       // 1. GET ACTIVE STREAMS
-      const activeStreamIds = await publicClient.readContract({
+      const activeStreamIds = await (publicClient.readContract as Function)({
         address: STREAM_PAY_ADDRESS,
         abi: STREAM_PAY_ABI,
         functionName: "getActiveStreamIds",
@@ -113,11 +113,12 @@ async function runIntelligentKeeper() {
           
           // Use viem's writeContract
           const hash = await walletClient.writeContract({
+            chain: somniaTestnet,
             account,
             address: STREAM_PAY_ADDRESS,
             abi: STREAM_PAY_ABI,
             functionName: 'batchUpdateStreams',
-            args: [batch.streamIds.map(id => BigInt(id))] // Ensure args are bigints
+            args: [batch.streamIds.map(id => BigInt(id))],
           });
 
           console.log(`  📤 Tx sent: ${hash}`);
