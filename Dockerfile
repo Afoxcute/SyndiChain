@@ -29,6 +29,9 @@ ENV AGENT_EXECUTOR_ADDRESS=0x841b8199E6d3Db3C6f264f6C2bd8848b3cA64223
 ENV NEXT_PUBLIC_APP_URL=__SYNDICHAIN_APP_URL__
 ENV NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=__SYNDICHAIN_WC_ID__
 
+# Ensure public/ exists so the COPY in the runner stage never fails
+RUN mkdir -p public
+
 # Build Next.js app
 RUN npm run build
 
