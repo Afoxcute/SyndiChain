@@ -45,11 +45,7 @@ async function fetchGasPrice(): Promise<GasPricing> {
     const baseFeeHex = json?.result?.baseFeePerGas?.[0];
     if (baseFeeHex) {
       const baseFee = BigInt(baseFeeHex);
-      // maxFeePerGas = baseFee × 2 (safe for next block), tip = 10% of baseFee
-      return {
-        maxFeePerGas: baseFee * 2n,
-        // keep undefined for maxPriorityFeePerGas — viem will set it to 0
-      };
+      return { maxFeePerGas: baseFee * 2n };
     }
   } catch { /* fall through */ }
 
@@ -68,7 +64,7 @@ async function fetchGasPrice(): Promise<GasPricing> {
   } catch { /* fall through */ }
 
   // Last resort: 50 gwei — high enough to clear most testnet base fees
-  return { gasPrice: 50_000_000_000n };
+  return { gasPrice: 50_000_000_000n } satisfies GasPricing;
 }
 
 export async function submitToSomnia(tx: FormattedTransaction): Promise<SubmitResult> {
@@ -97,14 +93,17 @@ export async function submitToSomnia(tx: FormattedTransaction): Promise<SubmitRe
   // Gas limit — provided estimate + 30% buffer
   const gasLimit = BigInt(Math.ceil(Number(tx.gasEstimate) * 1.3));
 
-  const txHash = await walletClient.sendTransaction({
+  const base = {
     to: tx.to as `0x${string}`,
     data: tx.data as `0x${string}`,
     value: BigInt(tx.value),
     gas: gasLimit,
     nonce,
-    ...gasPricing,
-  });
+  } as const;
+
+  const txHash = await (gasPricing.maxFeePerGas !== undefined
+    ? walletClient.sendTransaction({ ...base, maxFeePerGas: gasPricing.maxFeePerGas })
+    : walletClient.sendTransaction({ ...base, gasPrice: gasPricing.gasPrice }));
 
   return {
     txHash,
