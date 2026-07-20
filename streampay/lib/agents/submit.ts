@@ -24,8 +24,12 @@ export interface SubmitResult {
   explorerUrl: string;
 }
 
+type GasPricing =
+  | { maxFeePerGas: bigint; gasPrice?: undefined }
+  | { gasPrice: bigint; maxFeePerGas?: undefined };
+
 /** Fetch gas price directly via JSON-RPC — works even if viem chain config lacks EIP-1559 */
-async function fetchGasPrice(): Promise<{ maxFeePerGas?: bigint; gasPrice?: bigint }> {
+async function fetchGasPrice(): Promise<GasPricing> {
   try {
     // Try eth_feeHistory to get baseFee (EIP-1559)
     const res = await fetch(SOMNIA_RPC, {
