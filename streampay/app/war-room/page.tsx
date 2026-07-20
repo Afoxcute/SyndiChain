@@ -32,7 +32,17 @@ export default function WarRoomPage() {
   const [session, setSession] = useState<SwarmSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
+  // Tracks a pending human decision so buttons disappear immediately on click
+  const [pendingDecision, setPendingDecision] = useState<'approved' | 'rejected' | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Stop polling as soon as session reaches a terminal state — regardless of
+  // which code path set the session (interval OR optimistic update).
+  useEffect(() => {
+    if (session?.status === 'complete' || session?.status === 'failed') {
+      setPolling(false);
+    }
+  }, [session?.status]);
 
   // Poll for session updates every 1.5 seconds while running
   useEffect(() => {
@@ -42,9 +52,6 @@ export default function WarRoomPage() {
       if (res.ok) {
         const data: SwarmSession = await res.json();
         setSession(data);
-        if (data.status === 'complete' || data.status === 'failed') {
-          setPolling(false);
-        }
       }
     }, 1500);
     return () => clearInterval(interval);
@@ -58,6 +65,7 @@ export default function WarRoomPage() {
     if (!prompt.trim()) return;
     setLoading(true);
     setSession(null);
+    setPendingDecision(null);
 
     try {
       const res = await fetch('/api/swarm', {
@@ -74,15 +82,27 @@ export default function WarRoomPage() {
   }
 
   async function handleHumanDecision(decision: 'approved' | 'rejected') {
-    if (!sessionId) return;
+    if (!sessionId || pendingDecision) return;
+
+    // Optimistically hide the decision panel immediately — don't wait for the
+    // next poll. Sets humanDecision locally so the condition below is false.
+    setPendingDecision(decision);
+    setSession(prev => prev ? { ...prev, humanDecision: decision } : prev);
+
     await fetch('/api/swarm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'human_decision', sessionId, decision }),
     });
-    // Resume polling so the UI picks up the complete state and any
-    // remaining agent messages (Execution + Compliance run after approval)
-    setPolling(true);
+
+    // Immediately fetch updated state so we don't wait a full 1.5 s interval
+    const res = await fetch(`/api/swarm?sessionId=${sessionId}`);
+    if (res.ok) {
+      const data: SwarmSession = await res.json();
+      setSession(data);
+      // terminal-status useEffect above will call setPolling(false) if complete
+    }
+    setPendingDecision(null);
   }
 
   return (
@@ -150,7 +170,7 @@ export default function WarRoomPage() {
               disabled={loading || polling || !prompt.trim()}
               className="bg-purple-600 hover:bg-purple-700 px-6"
             >
-              {loading || polling ? (
+              {(loading || polling) && session?.status !== 'complete' && session?.status !== 'failed' ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
@@ -252,7 +272,7 @@ export default function WarRoomPage() {
             )}
 
             {/* Human Decision Panel */}
-            {session.status === 'awaiting_human' && !session.humanDecision && (
+            {session.status === 'awaiting_human' && !session.humanDecision && !pendingDecision && (
               <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
                 <Card className="border-orange-500/50 bg-orange-500/5">
                   <CardHeader className="pb-2">

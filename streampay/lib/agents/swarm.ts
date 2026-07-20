@@ -234,7 +234,7 @@ export function recordHumanDecision(sessionId: string, decision: 'approved' | 'r
   if (!session.needsPostApprovalPipeline) {
     session.messages.push({
       id: nanoid(), agent: 'manager', type: 'human_decision',
-      content: `Human approved the transaction. Submitting to Somnia blockchain...`,
+      content: `Human approved the transaction. Submitted to Somnia blockchain.`,
       timestamp: Date.now(),
     });
     session.status = 'complete';
