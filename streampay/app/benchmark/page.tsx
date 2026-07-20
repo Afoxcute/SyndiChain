@@ -220,7 +220,7 @@ export default function BenchmarkPage() {
               </Button>
             </div>
             {aggregate.provider === 'none' && (
-              <p className="text-xs text-yellow-400">⚠️ Set QWEN_API_KEY or ANTHROPIC_API_KEY in .env.local to enable live runs</p>
+              <p className="text-xs text-yellow-400">⚠️ No LLM API key configured — live runs unavailable</p>
             )}
           </div>
 
