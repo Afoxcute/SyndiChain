@@ -43,7 +43,7 @@ Recipient and sender dashboard:
 - **Cancel** button — senders recover unstreamed funds
 
 ### Analytics (`/analytics`)
-Real-time swarm session stats — agent message volume, governance outcomes, debate frequency, session history.
+Real-time swarm session stats — agent message volume, governance outcomes, debate frequency, session history. Reads from Redis so stats survive server restarts.
 
 ---
 
@@ -83,6 +83,9 @@ User Prompt
     └─────┬──────┘
           ▼
     Human Approval → broadcast via KEEPER_PRIVATE_KEY + viem
+          │
+          ▼
+    Redis ← session persisted at every step
 ```
 
 ---
@@ -108,8 +111,9 @@ Explorer: [shannon-explorer.somnia.network](https://shannon-explorer.somnia.netw
 SyndiChain/
 ├── .github/
 │   └── workflows/
-│       └── ci-cd.yml              # Typecheck → Docker build/push → SSH deploy
+│       └── ci-cd.yml              # Typecheck → Docker build/push → SSH deploy (compose)
 ├── Dockerfile                     # Multi-stage: Next.js standalone + compiled keeper
+├── docker-compose.yml             # Production: app + Redis:7-alpine with healthcheck
 ├── contracts/
 │   ├── contracts/
 │   │   ├── TreasuryPolicy.sol
@@ -139,7 +143,8 @@ SyndiChain/
     │   └── batch-optimizer.ts     # Qwen-Turbo batch scheduler (Gemini removed)
     ├── lib/agents/
     │   ├── types.ts               # SwarmSession, AgentMessage, YieldOpportunity
-    │   ├── swarm.ts               # In-memory session store + orchestration loop
+    │   ├── store.ts               # Redis session store (ioredis, falls back to memory)
+    │   ├── swarm.ts               # Orchestration loop — persists to Redis after every step
     │   ├── manager.ts             # Qwen-Plus decomposition + debate adjudication
     │   ├── analyst.ts             # DEX API fetcher + Qwen-Turbo pool ranker
     │   ├── risk.ts                # Risk scoring + veto + Shannon Explorer reads
@@ -153,14 +158,15 @@ SyndiChain/
     │   ├── useStreamContract.ts   # Stream read/write wagmi hooks
     │   └── useTemplates.ts        # Stream template hooks
     ├── components/
-    │   └── layout/Header.tsx      # Navigation: War Room, Benchmark, Create Stream, My Streams, Analytics
+    │   └── layout/Header.tsx      # Navigation: War Room, Benchmark, Create, My Streams, Analytics
     ├── lib/
     │   ├── contracts.ts           # Contract addresses + Somnia chain config
     │   ├── abis/                  # StreamPay, StreamFactory, StreamKeeper ABIs
     │   └── pino-stub.js           # Browser no-op for WalletConnect pino crash fix
+    ├── public/                    # Static assets (required by Next.js standalone)
     ├── docker-entrypoint.sh       # Replaces runtime placeholders, starts keeper + Next.js
     ├── tsconfig.keeper.json       # Separate tsconfig: compiles keeper → CommonJS JS
-    └── next.config.js             # standalone output, webpack aliases, externals
+    └── next.config.js             # standalone output, webpack aliases, ioredis external
 ```
 
 ---
@@ -173,7 +179,7 @@ SyndiChain/
 - MetaMask on Somnia Testnet (Chain ID: 50312, RPC: `https://dream-rpc.somnia.network`)
 - Testnet STT from the [Somnia faucet](https://testnet.somnia.network)
 
-### Run Locally
+### Run Locally (no Docker)
 
 ```bash
 cd streampay
@@ -184,12 +190,21 @@ npm run dev
 
 `npm run dev` starts **both** Next.js and the keeper bot concurrently:
 - **Next.js** at [http://localhost:3000](http://localhost:3000)
-- **Keeper bot** polling every 10 seconds — calls `batchUpdateStreams` on all active streams so recipients can withdraw
+- **Keeper bot** polling every 10 seconds — calls `batchUpdateStreams` on-chain so recipients can withdraw
 
 To run Next.js only (no keeper):
 ```bash
 npm run dev:next
 ```
+
+### Run Locally with Docker + Redis
+
+```bash
+cp streampay/.env.example streampay/.env.local  # fill in values
+docker compose up
+```
+
+This starts Redis + the app together. Sessions persist across restarts.
 
 ### Environment Variables (`streampay/.env.local`)
 
@@ -205,8 +220,11 @@ NEXT_PUBLIC_STREAM_PAY_ADDRESS=0x434ad66b34abe01c91eef1d24a1f2efede12c194
 NEXT_PUBLIC_STREAM_KEEPER_ADDRESS=0xb6b76f3c8fa04300e9564f65dc75165ba8ff44ba
 NEXT_PUBLIC_STREAM_FACTORY_ADDRESS=0x0781293537e5bb80f23dee95f095d8e94a6537d8
 
-# Keeper — signs approved multicall TXs + runs batchUpdateStreams every 10s
+# Keeper — signs approved multicall TXs + calls batchUpdateStreams every 10s
 KEEPER_PRIVATE_KEY=                        # Somnia testnet wallet private key
+
+# Redis — persists swarm sessions across restarts (injected automatically by docker-compose)
+REDIS_URL=redis://localhost:6379           # leave blank if not using Redis locally
 
 # Wallet connection
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=      # From cloud.walletconnect.com
@@ -230,16 +248,19 @@ PRIVATE_KEY=0x... NETWORK=somniaTestnet npx ts-node scripts/deploy.ts
 
 ## Docker Deployment
 
-### Build and run locally
+### How the container works
 
-```bash
-docker build -t syndichain .
-docker run -p 3000:3000 --env-file streampay/.env.local syndichain
 ```
-
-The container starts both processes:
-1. **Keeper bot** — background process, updates stream balances every 10s
-2. **Next.js server** — foreground PID 1, serves the app on port 3000
+docker-entrypoint.sh
+  │
+  ├─ sed: replace __SYNDICHAIN_*__ placeholders in built JS
+  │
+  ├─ node keeper-dist/keeper/intelligent-keeper.js &   ← background
+  │       every 10s: batchUpdateStreams on all active streams
+  │
+  └─ exec node standalone/server.js                    ← foreground (PID 1)
+        connects to Redis via REDIS_URL at runtime
+```
 
 ### CI/CD via GitHub Actions
 
@@ -247,7 +268,7 @@ Push to `main` triggers `.github/workflows/ci-cd.yml`:
 
 1. **Typecheck & Lint** — `tsc --noEmit` + `next lint`
 2. **Build & Push** — Docker image pushed to `<DOCKER_USERNAME>/syndichain:latest`
-3. **Deploy** — SSH into server, pull latest image, restart container
+3. **Deploy** — copies `docker-compose.yml` to server via SCP, then SSH runs `docker compose up -d`
 
 **GitHub Secrets required:**
 
@@ -259,7 +280,9 @@ Push to `main` triggers `.github/workflows/ci-cd.yml`:
 | `SSH_USERNAME` | SSH user (e.g. `ubuntu`) |
 | `SSH_PRIVATE_KEY` | Full SSH private key |
 
-**Server setup** (`~/syndichain/.env.app`):
+### Server setup
+
+Create `~/syndichain/.env.app`:
 
 ```env
 NEXT_PUBLIC_APP_URL=https://your-domain.com
@@ -267,11 +290,21 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_wc_id
 QWEN_API_KEY=your_qwen_key
 ANTHROPIC_API_KEY=your_anthropic_key
 KEEPER_PRIVATE_KEY=your_somnia_testnet_private_key
+REDIS_URL=redis://redis:6379
 ```
 
 ```bash
 chmod 600 ~/syndichain/.env.app
 ```
+
+`REDIS_URL` is also injected by `docker-compose.yml` via the `environment:` block, so the app always connects to the co-located Redis container regardless of what's in `.env.app`.
+
+### What docker-compose.yml provides
+
+- **Redis 7 Alpine** — persistent volume (`redis-data`), append-only mode, healthcheck
+- **App container** — waits for Redis healthy before starting, `REDIS_URL` auto-injected
+- Sessions stored under key prefix `syndichain:session:*` with 24-hour TTL
+- Swarm session state written to Redis after every agent step — polling works across restarts
 
 ---
 
@@ -279,6 +312,12 @@ chmod 600 ~/syndichain/.env.app
 
 **Qwen-Plus for Manager, Qwen-Turbo for workers**
 Manager reasoning (debate adjudication, task decomposition) needs deeper context. Workers (pool ranking, risk scoring, batch optimization) are fast structured tasks — Turbo is sufficient and 3× cheaper.
+
+**Redis hybrid store (memory + Redis)**
+The in-memory Map is the primary store for active in-flight sessions to avoid Redis round trips on every message push. Redis is written after every agent step via `persist()`. On `getSession`, Redis is checked as fallback if the session isn't in memory (e.g. after server restart). This gives both speed and durability.
+
+**`ioredis` as webpack external + manual standalone copy**
+Next.js standalone doesn't bundle webpack externals. `ioredis` is added to `config.externals` to prevent bundling (it has native bindings), and its `node_modules` directory is explicitly copied into `standalone/node_modules/` in the Dockerfile so Node.js can resolve it at runtime.
 
 **Raw `eth_call` for on-chain reads**
 Avoids heavy SDK dependency in the server-side agent bundle. `onchain.ts` does direct JSON-RPC — same result, zero extra imports.
@@ -293,13 +332,10 @@ Individual pool deposit calls may fail on testnet. The container multicall TX st
 WalletConnect imports pino at browser runtime. A webpack alias pointing it to a no-op stub eliminates the `pino is not defined` crash.
 
 **Keeper bot runs alongside Next.js**
-`StreamPay.sol` stores `realTimeBalance` in contract storage — it only updates when `batchUpdateStreams()` is called. Without the keeper, recipients see a withdrawable balance in the UI but the withdraw transaction reverts because the contract value is stale. The keeper fixes this by updating on-chain every 10 seconds.
-
-**Separate `tsconfig.keeper.json` for Docker**
-Next.js uses `moduleResolution: bundler` which is incompatible with ts-node in a production container. The keeper tsconfig compiles to CommonJS JS, which runs with plain `node` — no ts-node in the production image.
+`StreamPay.sol` stores `realTimeBalance` in contract storage — only updates when `batchUpdateStreams()` is called. Without the keeper, withdraw transactions revert even when the UI shows a balance. The keeper fixes this by updating on-chain every 10 seconds.
 
 **Gemini fully removed**
-All AI features (parse-stream, check-fraud, War Room agents, keeper batch optimizer) now use Qwen exclusively via the Alibaba Cloud DashScope API (`dashscope-intl.aliyuncs.com/compatible-mode/v1`), with Claude as an optional fallback.
+All AI features use Qwen exclusively via Alibaba Cloud DashScope (`dashscope-intl.aliyuncs.com/compatible-mode/v1`), with Claude as an optional fallback. `batch-optimizer.ts` was the last Gemini holdout — now uses Qwen-Turbo with a no-AI fallback that always executes.
 
 ---
 
@@ -313,20 +349,20 @@ All AI features (parse-stream, check-fraud, War Room agents, keeper batch optimi
 | Smart contracts | TreasuryPolicy.sol + SomniaAgentRiskOracle.sol on Somnia Testnet |
 | War Room dashboard | Live agent message board with Framer Motion AnimatePresence |
 | Benchmark tab | 20-trial aggregate + live head-to-head runner |
-| Qwen-Plus / Qwen-Turbo | Manager uses Qwen-Plus; Analyst, Risk, Execution, keeper use Qwen-Turbo |
+| Qwen-Plus / Qwen-Turbo | Manager uses Qwen-Plus; all workers + keeper use Qwen-Turbo |
 | Real DEX API calls | Somnia Exchange + Potion Swap with `Promise.allSettled` fallback |
 | Somnia Agent Kit Multicall | `ChainClient` + `MultiCall` SDK + viem `encodeFunctionData` |
 | Shannon Explorer API | `/api/v2/smart-contracts/{address}` for on-chain risk data |
 | Human-in-the-loop | Approve/Reject panel in War Room before any broadcast |
 | On-chain submission | viem wallet client + live gas price from `eth_feeHistory` |
+| Session persistence | Redis via ioredis — survives server restarts, 24h TTL |
 | Keeper bot | Runs alongside Next.js (dev) and in Docker (prod), updates streams every 10s |
-| CI/CD | GitHub Actions: typecheck → Docker build/push → SSH deploy |
+| CI/CD | GitHub Actions: typecheck → Docker build/push → docker compose deploy via SSH |
 
 ---
 
 ## Known Limitations
 
-- **In-memory session store** — swarm sessions are lost on server restart. Use Redis for production.
 - **DEX APIs unavailable on testnet** — falls back to enriched static pool data with real deployed contract addresses.
 - **Multicall inner calls revert** — target contracts don't implement `deposit(uint256)`. The container TX succeeds (`requireSuccess=false`), proving the batching mechanism.
 - **KEEPER_PRIVATE_KEY required for broadcast** — without it, the swarm runs in simulation mode and prints calldata for manual submission.

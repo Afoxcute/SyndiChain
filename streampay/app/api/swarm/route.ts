@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'human_decision') {
       const { sessionId, decision } = body;
-      const ok = recordHumanDecision(sessionId, decision);
+      const ok = await recordHumanDecision(sessionId, decision);
       if (!ok) return NextResponse.json({ error: 'Session not found or not awaiting decision' }, { status: 400 });
       return NextResponse.json({ success: true });
     }
@@ -30,10 +30,10 @@ export async function GET(req: NextRequest) {
   const sessionId = searchParams.get('sessionId');
 
   if (sessionId) {
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     return NextResponse.json(session);
   }
 
-  return NextResponse.json(getAllSessions());
+  return NextResponse.json(await getAllSessions());
 }

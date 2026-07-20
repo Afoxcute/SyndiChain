@@ -28,9 +28,9 @@ const nextConfig = {
       config.resolve.alias['thread-stream'] = require.resolve('./lib/pino-stub.js');
     }
 
-    // somnia-agent-kit uses pino + thread-stream which spawn worker threads —
-    // keep them server-side only
-    config.externals.push('lokijs', 'encoding', 'somnia-agent-kit');
+    // Keep these server-side only — they use native bindings or worker threads
+    // that Next.js webpack cannot bundle.
+    config.externals.push('lokijs', 'encoding', 'somnia-agent-kit', 'ioredis');
 
     return config;
   },

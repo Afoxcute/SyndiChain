@@ -1,27 +1,18 @@
-# SyndiChain Frontend — Next.js 14
+# SyndiChain — streampay
 
-The web application for SyndiChain. Runs the multi-agent swarm, serves the War Room dashboard, connects to deployed Somnia Testnet contracts, and runs the keeper bot that keeps stream balances current on-chain.
+Next.js 14 frontend + keeper bot for the SyndiChain multi-agent treasury system. Runs standalone (`output: 'standalone'`), containerized via Docker with a co-located Redis instance.
 
-## Stack
-
-- **Next.js 14** (App Router, `output: standalone`)
-- **wagmi v2 + RainbowKit** — wallet connection
-- **viem** — contract reads, ABI encoding, transaction broadcast, live gas pricing
-- **Qwen-Plus / Qwen-Turbo** via Alibaba Cloud DashScope API (OpenAI-compatible)
-- **Framer Motion** — live agent message board animations
-- **Recharts** — benchmark and analytics charts
-- **Somnia Agent Kit** (`somnia-agent-kit@3.0.11`) — Multicall3 SDK
-- **concurrently** — runs Next.js + keeper bot in parallel with `npm run dev`
-
-## Dev Setup
+## Development
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in QWEN_API_KEY, KEEPER_PRIVATE_KEY, contract addresses
+cp .env.example .env.local   # fill in your keys
 npm run dev
 ```
 
-Starts both Next.js at [http://localhost:3000](http://localhost:3000) and the keeper bot (updates stream balances on-chain every 10s).
+`npm run dev` starts **both** Next.js and the keeper bot via `concurrently`:
+- Next.js at [http://localhost:3000](http://localhost:3000)
+- Keeper bot polling Somnia every 10 seconds
 
 To run Next.js only:
 ```bash
@@ -30,104 +21,145 @@ npm run dev:next
 
 ## Scripts
 
-| Command | What it does |
-|---------|-------------|
+| Script | Purpose |
+|--------|---------|
 | `npm run dev` | Next.js + keeper bot (concurrently) |
 | `npm run dev:next` | Next.js only |
-| `npm run build` | Production build |
-| `npm run start` | Serve production build |
-| `npm run keeper` | Keeper bot only |
+| `npm run build` | Next.js production build (standalone output) |
+| `npm run keeper` | Keeper bot only (ts-node) |
 | `npm run lint` | ESLint |
-
-## Pages
-
-| Route | Description |
-|-------|-------------|
-| `/` | Landing page — agent society overview, execution flow |
-| `/war-room` | Live multi-agent swarm dashboard |
-| `/benchmark` | Swarm vs single-agent head-to-head |
-| `/create` | AI-powered stream creation + fraud detection |
-| `/streams` | Recipient withdraw + sender cancel dashboard |
-| `/analytics` | Swarm session stats and agent activity charts |
-
-## API Routes
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/swarm` | POST | Start swarm session or submit human decision |
-| `/api/swarm?sessionId=` | GET | Poll session state |
-| `/api/swarm` | GET | List all sessions (for analytics) |
-| `/api/benchmark` | GET | Aggregate benchmark data (20 trials) |
-| `/api/benchmark/run` | POST | Live head-to-head benchmark run |
-| `/api/parse-stream` | POST | Qwen-Turbo — parse plain-English stream description |
-| `/api/check-fraud` | POST | Qwen-Turbo — fraud risk score for stream parameters |
-
-## Agent Files (`lib/agents/`)
-
-| File | Purpose |
-|------|---------|
-| `types.ts` | `SwarmSession`, `AgentMessage`, `YieldOpportunity`, `FormattedTransaction` |
-| `swarm.ts` | In-memory session store, orchestration loop, human decision handler, `broadcastAndComplete()` |
-| `manager.ts` | Qwen-Plus decomposition + debate adjudication |
-| `analyst.ts` | DEX API fetcher + Qwen-Turbo pool ranker + debate arguments |
-| `risk.ts` | Risk scoring, veto logic, Shannon Explorer + oracle reads |
-| `execution.ts` | Multicall3 encoding via viem `encodeFunctionData` + Somnia Agent Kit |
-| `compliance.ts` | TreasuryPolicy.sol reader + rules engine |
-| `onchain.ts` | Raw `eth_call` for contract reads (no SDK dependency) |
-| `submit.ts` | viem wallet client — signs and broadcasts approved tx via `KEEPER_PRIVATE_KEY` |
-| `llm.ts` | Unified Qwen/Claude client with model selection |
-| `uid.ts` | Local nanoid replacement (avoids ESM incompatibility) |
-
-## Keeper Bot (`keeper/`)
-
-| File | Purpose |
-|------|---------|
-| `intelligent-keeper.ts` | Main loop — fetches active streams, runs optimizer, calls `batchUpdateStreams` every 10s |
-| `batch-optimizer.ts` | Qwen-Turbo batch scheduler — decides ordering; falls back to always-execute if Qwen unavailable |
-
-The keeper is required for the **My Streams** withdraw feature. `StreamPay.sol` stores `realTimeBalance` in contract storage and only updates it when `batchUpdateStreams()` is called. Without the keeper, the withdraw transaction reverts even when the UI shows a balance. The keeper fixes this by pushing balance updates on-chain every 10 seconds.
 
 ## Environment Variables
 
+Copy `.env.example` to `.env.local` and fill in:
+
 ```env
-# LLM — Qwen preferred, Claude fallback
-QWEN_API_KEY=                              # Powers all 5 agents + AI features + keeper optimizer
-ANTHROPIC_API_KEY=                         # Fallback if no Qwen key
+# LLM — Qwen is primary for all 5 agents + AI stream features + keeper optimizer
+QWEN_API_KEY=
+ANTHROPIC_API_KEY=         # fallback only
 
-# On-chain contracts (Somnia Testnet — already deployed)
-NEXT_PUBLIC_TREASURY_POLICY_ADDRESS=0x2e42ffe3c108ff1c0e0f4e70cc3e36092b068c6e
-NEXT_PUBLIC_RISK_ORACLE_ADDRESS=0xb3242569cd189b2e4e8949388d4b7c12000f5476
-NEXT_PUBLIC_STREAM_PAY_ADDRESS=0x434ad66b34abe01c91eef1d24a1f2efede12c194
-NEXT_PUBLIC_STREAM_KEEPER_ADDRESS=0xb6b76f3c8fa04300e9564f65dc75165ba8ff44ba
-NEXT_PUBLIC_STREAM_FACTORY_ADDRESS=0x0781293537e5bb80f23dee95f095d8e94a6537d8
+# On-chain contracts (Somnia Testnet — already deployed, addresses pre-filled in .env.example)
+NEXT_PUBLIC_TREASURY_POLICY_ADDRESS=
+NEXT_PUBLIC_RISK_ORACLE_ADDRESS=
+NEXT_PUBLIC_STREAM_PAY_ADDRESS=
+NEXT_PUBLIC_STREAM_KEEPER_ADDRESS=
+NEXT_PUBLIC_STREAM_FACTORY_ADDRESS=
 
-# Keeper wallet — signs approved multicall TXs + calls batchUpdateStreams every 10s
-KEEPER_PRIVATE_KEY=                        # Somnia testnet private key (no 0x prefix needed)
+# Keeper bot signs approved transactions + calls batchUpdateStreams every 10s
+KEEPER_PRIVATE_KEY=
 
-# Wallet connection
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=      # From cloud.walletconnect.com
+# Redis — persists swarm sessions across restarts (optional locally)
+REDIS_URL=redis://localhost:6379
+
+# WalletConnect
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
 
 # Somnia Agent Kit
 SOMNIA_RPC_URL=https://dream-rpc.somnia.network
-AGENT_REGISTRY_ADDRESS=0x841b8199E6d3Db3C6f264f6C2bd8848b3cA64223
-AGENT_EXECUTOR_ADDRESS=0x841b8199E6d3Db3C6f264f6C2bd8848b3cA64223
+AGENT_REGISTRY_ADDRESS=
+AGENT_EXECUTOR_ADDRESS=
 ```
+
+## Project Layout
+
+```
+streampay/
+├── app/
+│   ├── page.tsx                   # Landing page
+│   ├── war-room/page.tsx          # Live swarm dashboard
+│   ├── benchmark/page.tsx         # Swarm vs single-agent comparison
+│   ├── create/page.tsx            # AI stream creation
+│   ├── streams/page.tsx           # Withdraw / cancel streams
+│   ├── analytics/page.tsx         # Session analytics
+│   └── api/
+│       ├── swarm/route.ts         # Session orchestration + human decisions
+│       ├── benchmark/             # Benchmark runner + aggregate stats
+│       ├── parse-stream/          # Qwen AI stream parser
+│       └── check-fraud/           # Qwen fraud detection
+├── keeper/
+│   ├── intelligent-keeper.ts      # Calls batchUpdateStreams every 10s
+│   └── batch-optimizer.ts         # Qwen-Turbo batch scheduler
+├── lib/agents/
+│   ├── types.ts                   # SwarmSession, AgentMessage types
+│   ├── store.ts                   # Redis session store (ioredis)
+│   ├── swarm.ts                   # Orchestration — persists to Redis after every step
+│   ├── manager.ts                 # Qwen-Plus decomposition + debate
+│   ├── analyst.ts                 # DEX API fetcher + Qwen-Turbo pool ranker
+│   ├── risk.ts                    # Risk scoring + veto
+│   ├── execution.ts               # Multicall3 encoder
+│   ├── compliance.ts              # TreasuryPolicy.sol rules engine
+│   ├── onchain.ts                 # Raw eth_call for contract reads
+│   ├── submit.ts                  # viem wallet client — broadcasts tx
+│   ├── llm.ts                     # Unified Qwen/Claude client
+│   └── uid.ts                     # Local nanoid
+├── lib/
+│   ├── contracts.ts               # Addresses + Somnia chain config
+│   ├── abis/                      # Contract ABIs
+│   └── pino-stub.js               # Browser no-op for WalletConnect pino
+├── components/layout/Header.tsx   # Navigation header
+├── hooks/
+│   ├── useStreamContract.ts       # Stream wagmi hooks
+│   └── useTemplates.ts            # Stream template hooks
+├── public/                        # Static assets
+├── docker-entrypoint.sh           # Starts keeper + Next.js in container
+├── tsconfig.keeper.json           # Compiles keeper → CommonJS for plain node
+└── next.config.js                 # standalone, webpack aliases, ioredis external
+```
+
+## Keeper Bot
+
+`keeper/intelligent-keeper.ts` polls on-chain every 10 seconds and calls `batchUpdateStreams()` on `StreamPay.sol`. This is required because `StreamPay.sol` stores `realTimeBalance` in contract storage — without the keeper, withdraw transactions revert even when the UI shows a balance.
+
+In development: keeper starts automatically with `npm run dev`.
+
+In Docker: `docker-entrypoint.sh` starts the compiled keeper as a background process before handing PID 1 to Next.js.
+
+**The keeper wallet (`KEEPER_PRIVATE_KEY`) needs testnet STT for gas.** Get it from the [Somnia faucet](https://testnet.somnia.network).
+
+## Redis Session Store
+
+`lib/agents/store.ts` provides an ioredis-backed session store:
+
+- `saveSession(session)` — writes to Redis with 24h TTL
+- `loadSession(id)` — reads by session ID
+- `loadAllSessions()` — bulk read via pipeline
+
+`swarm.ts` uses a hybrid store: in-memory Map for active in-flight sessions (no Redis latency per message push), plus `saveSession()` called after every agent step. On cold start, `getSession()` checks Redis as a fallback — sessions survive server restarts.
+
+If `REDIS_URL` is not set, the store silently no-ops and sessions exist only in memory.
 
 ## Docker
 
-The `Dockerfile` at the repo root builds a production image that includes both the Next.js standalone server and the compiled keeper bot.
+The container is built by the root `Dockerfile` (multi-stage):
 
-`docker-entrypoint.sh` (copied into the image):
-1. Replaces `__SYNDICHAIN_*__` placeholder strings in the built JS with real env values from `--env-file .env.app`
-2. Starts the keeper bot as a background process
-3. Starts Next.js as PID 1
+1. **base** — `npm ci` → `next build` → `tsc --project tsconfig.keeper.json`
+2. **runner** — copies standalone output + static + public + keeper-dist + ioredis deps
 
-The keeper is compiled separately via `tsconfig.keeper.json` (CommonJS output) so it runs with plain `node` in the production image — no ts-node required.
+`ioredis` is a webpack external (it has native bindings Next.js can't bundle), so it and its peer dependencies (`@ioredis`, `cluster-key-slot`, `denque`) are explicitly copied into `standalone/node_modules/` in the Dockerfile.
 
-## Known Limitations
+For production, run via `docker compose` from the repo root — this starts Redis first, waits for it to be healthy, then starts the app with `REDIS_URL=redis://redis:6379` injected automatically.
 
-- **In-memory session store** — sessions are lost on server restart. Use Redis for production.
-- **DEX APIs unavailable on testnet** — falls back to enriched static pool data using real deployed contract addresses as targets.
-- **Multicall inner calls revert** — target contracts don't implement `deposit(uint256)`. The container multicall TX succeeds (`requireSuccess=false`), proving the batching mechanism.
-- **KEEPER_PRIVATE_KEY required for broadcast** — without it, the swarm runs in simulation mode.
-- **Keeper wallet needs STT for gas** — get testnet STT from the [Somnia faucet](https://testnet.somnia.network).
+## Key Technical Notes
+
+**`next.config.js` externals**
+```js
+config.externals.push('lokijs', 'encoding', 'somnia-agent-kit', 'ioredis');
+```
+`somnia-agent-kit` spawns worker threads that webpack can't bundle. `ioredis` has native bindings. Both resolve from `node_modules` at runtime on the server.
+
+**`tsconfig.keeper.json`**
+Separate tsconfig with `"module": "CommonJS"` — compiles keeper to `keeper-dist/` so it runs with plain `node` in production (no ts-node, no ESM).
+
+**`submit.ts` gas pricing**
+viem v2 requires a discriminated union — `maxFeePerGas` and `gasPrice` cannot both be optional in the same `sendTransaction` call. Uses an explicit branch:
+```typescript
+type GasPricing =
+  | { maxFeePerGas: bigint; gasPrice?: undefined }
+  | { gasPrice: bigint; maxFeePerGas?: undefined };
+```
+
+**`intelligent-keeper.ts` viem types**
+`readContract` is cast to `Function` to bypass the EIP-7702 `authorizationList` union type added in viem v2.19+. `writeContract` explicitly passes `chain: somniaTestnet` (required in viem v2).
+
+**`batch-optimizer.ts`**
+Uses Qwen-Turbo via DashScope (`dashscope-intl.aliyuncs.com/compatible-mode/v1`). Three-tier fallback: Qwen-Turbo → error fallback (always execute) → no-API-key mode (always execute). Gemini has been fully removed.

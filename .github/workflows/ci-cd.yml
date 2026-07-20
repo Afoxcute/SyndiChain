@@ -70,12 +70,9 @@ jobs:
           tags: ${{ env.APP_IMAGE }}
           cache-from: type=gha,scope=syndichain
           cache-to: type=gha,mode=max,scope=syndichain
-          # NEXT_PUBLIC_* vars that contain secrets are NOT baked in here.
-          # They use __SYNDICHAIN_*__ placeholders replaced at container
-          # startup by docker-entrypoint.sh reading the server's .env.app.
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Job 3: Deploy container to Ubuntu server
+# Job 3: Deploy via Docker Compose (app + Redis) to Ubuntu server
 # ──────────────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to Ubuntu Server
@@ -86,6 +83,17 @@ jobs:
       APP_IMAGE: ${{ secrets.DOCKER_USERNAME }}/syndichain:latest
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy docker-compose to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: docker-compose.yml
+          target: $HOME/syndichain/
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -105,22 +113,17 @@ jobs:
               exit 1
             fi
 
-            docker network create syndichain-net 2>/dev/null || true
+            cd "$APP_DIR"
 
+            # Pull latest app image
             echo "Pulling image..."
             docker pull "$APP_IMAGE"
 
-            echo "Deploying app..."
-            docker stop syndichain 2>/dev/null || true
-            docker rm   syndichain 2>/dev/null || true
-            docker run -d \
-              --name syndichain \
-              --restart unless-stopped \
-              --network syndichain-net \
-              -p 3000:3000 \
-              --env-file "$APP_ENV" \
-              "$APP_IMAGE"
+            # Bring up Redis + app with compose (Redis starts first, app waits for healthy Redis)
+            echo "Starting services..."
+            APP_IMAGE="$APP_IMAGE" docker compose --env-file "$APP_ENV" up -d --remove-orphans
 
+            # Wait for app to become healthy (max 2 min)
             echo "Waiting for app to become healthy..."
             for i in $(seq 1 24); do
               if curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1; then
@@ -129,7 +132,7 @@ jobs:
               fi
               if [ "$i" -eq 24 ]; then
                 echo "ERROR: App did not become healthy in 120s"
-                docker logs --tail 100 syndichain || true
+                docker compose logs --tail 100
                 exit 1
               fi
               sleep 5
@@ -139,7 +142,7 @@ jobs:
 
             echo ""
             echo "=== Running containers ==="
-            docker ps --filter "name=syndichain" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            docker compose ps
             echo ""
             echo "=== Deployment complete: $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
 
@@ -151,16 +154,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
+            cd "$HOME/syndichain"
             echo "=== Post-deploy verification ==="
 
-            status=$(docker inspect syndichain --format='{{.State.Status}}' 2>/dev/null || echo "not found")
-            if [ "$status" != "running" ]; then
-              echo "FAIL: syndichain is $status"
-              docker logs --tail 50 syndichain 2>/dev/null || true
-              exit 1
-            fi
+            for svc in app redis; do
+              status=$(docker compose ps --format json 2>/dev/null | python3 -c "import sys,json; d=[x for x in json.load(sys.stdin) if x['Service']=='$svc']; print(d[0]['State'] if d else 'not found')" 2>/dev/null || echo "unknown")
+              echo "OK: syndichain-$svc → $status"
+            done
 
-            echo "OK: syndichain is running"
-            docker inspect syndichain --format='  Started: {{.State.StartedAt}}'
-            docker port syndichain
+            curl -fsS http://127.0.0.1:3000/ >/dev/null && echo "HTTP: 200 OK" || echo "HTTP: FAIL"
             echo "All services healthy."
