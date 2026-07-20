@@ -126,7 +126,7 @@ jobs:
             # Wait for app to become healthy (max 2 min)
             echo "Waiting for app to become healthy..."
             for i in $(seq 1 24); do
-              if curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1; then
+              if curl -fsS http://127.0.0.1/ >/dev/null 2>&1; then
                 echo "App healthy after $((i * 5))s"
                 break
               fi
@@ -162,5 +162,5 @@ jobs:
               echo "OK: syndichain-$svc → $status"
             done
 
-            curl -fsS http://127.0.0.1:3000/ >/dev/null && echo "HTTP: 200 OK" || echo "HTTP: FAIL"
+            curl -fsS http://127.0.0.1/ >/dev/null && echo "HTTP: 200 OK" || echo "HTTP: FAIL"
             echo "All services healthy."
