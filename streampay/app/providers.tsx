@@ -1,11 +1,10 @@
 'use client';
 
-import * as React from 'react';
+import React from 'react';
 import {
   RainbowKitProvider,
   getDefaultConfig,
   darkTheme,
-  lightTheme,
 } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,30 +15,20 @@ const config = getDefaultConfig({
   appName: 'SyndiChain',
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'default-project-id',
   chains: [somniaTestnet],
-  ssr: true, // If your dApp uses server side rendering (SSR)
+  ssr: true,
 });
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 3,
+      retry: 1,
       staleTime: 30000,
     },
   },
 });
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = React.useState(false);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return null;
-  }
-
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
@@ -49,10 +38,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             accentColorForeground: 'white',
             borderRadius: 'medium',
           })}
-          appInfo={{
-            appName: 'SyndiChain',
-            learnMoreUrl: 'https://somnia.network',
-          }}
+          appInfo={{ appName: 'SyndiChain', learnMoreUrl: 'https://somnia.network' }}
         >
           {children}
           <Toaster

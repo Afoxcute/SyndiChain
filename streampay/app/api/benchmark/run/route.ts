@@ -27,13 +27,15 @@ interface SwarmResult {
   debateTriggered: boolean;
 }
 
-// Known real pool addresses — hallucination check
+// Known real pool addresses on Somnia Testnet — hallucination check.
+// These are the actual deployed SyndiChain contracts used as fallback pool targets.
 const KNOWN_POOL_ADDRESSES = new Set([
-  '0x1234567890123456789012345678901234567890',
-  '0xabcdef0123456789abcdef0123456789abcdef01',
-  '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-  '0x9999999999999999999999999999999999999999',
-  '0xaaaa1111bbbb2222cccc3333dddd4444eeee5555',
+  '0x2e42ffe3c108ff1c0e0f4e70cc3e36092b068c6e', // TreasuryPolicy.sol
+  '0xb3242569cd189b2e4e8949388d4b7c12000f5476', // SomniaAgentRiskOracle.sol
+  '0x434ad66b34abe01c91eef1d24a1f2efede12c194', // StreamPay.sol
+  '0x0781293537e5bb80f23dee95f095d8e94a6537d8', // StreamFactory.sol
+  '0xb6b76f3c8fa04300e9564f65dc75165ba8ff44ba', // StreamKeeper.sol
+  '0x841b8199e6d3db3c6f264f6c2bd8848b3ca64223', // Multicall3
 ]);
 
 async function runSingleAgent(prompt: string): Promise<SingleAgentResult> {

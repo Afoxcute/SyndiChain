@@ -52,7 +52,7 @@ export async function runExecutionAgent(
   const callEntries: MulticallEntry[] = approved.map((p) => ({
     target: p.contractAddress,
     callData: encodeDepositCall(perPoolAmount),
-    value: perPoolAmount.toString(),
+    value: '0', // demo mode — no real STT transferred
     label: `Deposit ${formatAmount(perPoolAmount)} STT → ${p.protocol} ${p.pool} (${p.apy.toFixed(1)}% APY)`,
   }));
 
@@ -103,7 +103,7 @@ export async function runExecutionAgent(
   const tx: FormattedTransaction = {
     to: SOMNIA_CHAIN_CONFIG.network.multicall,
     data: multicallData,
-    value: totalAmountWei.toString(),
+    value: '0', // demo mode — multicall structure proven on-chain without transferring STT
     gasEstimate: gasEstimate.toString(),
     description:
       `Batch deposit ${amount} STT across ${approved.length} yield pool(s) via Somnia Agent Kit MultiCall\n` +
