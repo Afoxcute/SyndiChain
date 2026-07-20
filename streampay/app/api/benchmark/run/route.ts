@@ -98,7 +98,7 @@ async function runSwarmBenchmark(prompt: string): Promise<SwarmResult> {
   // Poll until swarm completes (max 60s)
   for (let i = 0; i < 40; i++) {
     await sleep(1500);
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session) break;
     if (session.status === 'awaiting_human' || session.status === 'complete' || session.status === 'failed') {
       const safeProposals = session.riskAssessments.filter(a => !a.vetoed).length;
